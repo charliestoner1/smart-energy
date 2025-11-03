@@ -3,19 +3,20 @@
  * Control Hub - Actuates relays based on price tiers and sensor data
  */
 
+#include "config.h"
 #include <WiFi.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 
 // WiFi Configuration
-const char* ssid = "YOUR_WIFI_SSID";
-const char* password = "YOUR_WIFI_PASSWORD";
+const char* ssid = WIFI_SSID;
+const char* password = WIFI_PASSWORD;
 
 // MQTT Configuration
-const char* mqtt_server = "YOUR_MQTT_BROKER";
-const int mqtt_port = 1883;
-const char* mqtt_user = "YOUR_MQTT_USER";
-const char* mqtt_password = "YOUR_MQTT_PASSWORD";
+const char* mqtt_server = MQTT_SERVER;
+const int mqtt_port = MQTT_PORT;
+const char* mqtt_user = MQTT_USER;
+const char* mqtt_password = MQTT_PASSWORD;
 
 // Pin Definitions (Control Hub)
 #define RELAY1_PIN 25  // Fan control

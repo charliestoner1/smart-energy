@@ -1,0 +1,15 @@
+// config.h.example - Template for configuration
+// Copy this file to config.h and fill in your actual credentials
+
+// WiFi Configuration
+#define WIFI_SSID "your_wifi_name_here"
+#define WIFI_PASSWORD "your_wifi_password_here"
+
+// API Configuration
+#define PRICING_API_URL "http://YOUR_COMPUTER_IP:5000/api/price/esp32"
+
+// MQTT Configuration (HiveMQ Cloud or local broker)
+#define MQTT_SERVER "your_mqtt_broker_address"
+#define MQTT_PORT 8883  // or 1883 for non-secure
+#define MQTT_USER "your_mqtt_username"
+#define MQTT_PASSWORD "your_mqtt_password"
