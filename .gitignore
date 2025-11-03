@@ -33,3 +33,8 @@ Thumbs.db
 
 # Docker volumes data
 volumes/
+
+# Arduino credentials
+config.h
+credentials.h
+esp32_config.h

@@ -3,6 +3,7 @@
  * Sensor Hub - Collects data and responds to price signals
  */
 
+#include "config.h"
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
@@ -10,17 +11,17 @@
 #include <DHT.h>
 
 // WiFi Configuration
-const char* ssid = "YOUR_WIFI_SSID";
-const char* password = "YOUR_WIFI_PASSWORD";
+const char* ssid = WIFI_SSID;
+const char* password = WIFI_PASSWORD;
 
 // API Configuration
-const char* pricingApiUrl = "http://YOUR_API_SERVER:5000/api/price/esp32";
+const char* pricingApiUrl = PRICING_API_URL;
 
 // MQTT Configuration
-const char* mqtt_server = "YOUR_MQTT_BROKER";
-const int mqtt_port = 1883;
-const char* mqtt_user = "YOUR_MQTT_USER";
-const char* mqtt_password = "YOUR_MQTT_PASSWORD";
+const char* mqtt_server = MQTT_SERVER;
+const int mqtt_port = MQTT_PORT;
+const char* mqtt_user = MQTT_USER;
+const char* mqtt_password = MQTT_PASSWORD;
 
 // Pin Definitions (Sensor Hub)
 #define DHT_PIN 4
