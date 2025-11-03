@@ -1,20 +1,16 @@
-// =========================
-// CONFIGURATION
-// =========================
 
-// Replace with your HiveMQ Cloud WebSocket URL (TLS)
 const BROKER_URL = 'wss://1e1a4e5c581e4bc3a697f8937d7fb9e4.s1.eu.hivemq.cloud:8884/mqtt';
 
-// Replace with your HiveMQ credentials
+
 const mqttOptions = {
-  username: 'omeravi',          // your username from HiveMQ Cloud -> Access Management
-  password: 'Omeromer1!', // your password (keep it secret)
+  username: 'omeravi',          
+  password: 'Omeromer1!', 
   keepalive: 60,
   reconnectPeriod: 2000,
   connectTimeout: 10000
 };
 
-// Topic scheme (make sure ESP32 uses same ones)
+
 const TOPICS = {
   telemetry: 'sensors/room1/telemetry',
   control:   'control/room1/cmd',
@@ -23,16 +19,14 @@ const TOPICS = {
   stateLamp: 'control/room1/state/lamp'
 };
 
-// Tiered energy rates
+
 const RATES = [
   { block: 250, rate: 0.110 },
   { block: 500, rate: 0.145 },
   { block: Infinity, rate: 0.185 }
 ];
 
-// =========================
-// STATE
-// =========================
+
 let mqttClient = null;
 let overrideActive = false;
 let accumulatedWh = 0;
@@ -40,9 +34,7 @@ let lastSampleTsMs = null;
 
 const deviceStates = { fan: false, lamp: false, pir: false };
 
-// =========================
-// CHARTS
-// =========================
+
 const powerData = { labels: [], datasets: [{ label: 'Power (W)', data: [], borderColor: '#00d9ff', tension: 0.35, pointRadius: 0 }] };
 const tempData  = {
   labels: [],
@@ -94,9 +86,7 @@ function addDataPoint(chart, data, label, value) {
   chart.update('none');
 }
 
-// =========================
-// MQTT CONNECTION
-// =========================
+
 function connectMQTT() {
   mqttClient = mqtt.connect(BROKER_URL, mqttOptions);
 
@@ -132,9 +122,7 @@ function setBrokerStatus(connected) {
   el.classList.toggle('active', connected);
 }
 
-// =========================
-// TELEMETRY HANDLER
-// =========================
+
 function handleTelemetry(d) {
   const tsMs = coerceTsMs(d.ts);
   const timeLabel = new Date(tsMs).toLocaleTimeString();
@@ -162,18 +150,14 @@ function handleTelemetry(d) {
   document.getElementById('projectedCost').textContent = costForKWh(kWh).toFixed(2);
 }
 
-// =========================
-// ALERTS
-// =========================
+
 function handleAlert(d) {
   const msg = d.message || 'Anomaly detected';
   const div = document.getElementById('alerts');
   div.innerHTML = `<div>⚠️ ${escapeHtml(msg)}</div>` + div.innerHTML;
 }
 
-// =========================
-// COMMANDS & STATE
-// =========================
+
 function publishCmd(device, action, reason = 'manual') {
   if (!mqttClient || !mqttClient.connected) { alert('Broker not connected yet.'); return; }
   mqttClient.publish(TOPICS.control, JSON.stringify({ device, action, reason }));
@@ -222,9 +206,7 @@ function updateDeviceStatus(device) {
   el.classList.toggle('active', on);
 }
 
-// =========================
-// COST
-// =========================
+
 function costForKWh(kWhTotal) {
   let remaining = kWhTotal;
   let cost = 0;
@@ -237,9 +219,6 @@ function costForKWh(kWhTotal) {
   return cost;
 }
 
-// =========================
-// HELPERS
-// =========================
 function setStatus(name, active, textFn) {
   const el = document.getElementById(`status${name}`);
   el.textContent = typeof textFn === 'function'
@@ -253,8 +232,8 @@ function isFiniteNumber(x){ return Number.isFinite(+x); }
 function coerceTsMs(ts) {
   const n = Number(ts);
   if (!Number.isFinite(n)) return Date.now();
-  if (n > 1e12) return n;        // ms
-  if (n > 1e9)  return n * 1000; // seconds
+  if (n > 1e12) return n;        
+  if (n > 1e9)  return n * 1000; 
   return Date.now();
 }
 
@@ -264,11 +243,9 @@ function escapeHtml(s) {
 
 function capitalize(s){ return s ? s[0].toUpperCase()+s.slice(1) : s; }
 
-// =========================
-// INIT
-// =========================
+
 connectMQTT();
 
-// expose to inline HTML buttons
+
 window.sendCommand = sendCommand;
 window.toggleOverride = toggleOverride;
