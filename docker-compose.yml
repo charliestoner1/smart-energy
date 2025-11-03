@@ -1,0 +1,49 @@
+
+
+services:
+  # MQTT Broker
+  mosquitto:
+    image: eclipse-mosquitto:2.0
+    container_name: mqtt_broker
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - ./mosquitto/config:/mosquitto/config
+      - ./mosquitto/data:/mosquitto/data
+      - ./mosquitto/log:/mosquitto/log
+    restart: unless-stopped
+    networks:
+      - iot_network
+
+  # ComEd Pricing API Server
+  pricing_api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: comed_pricing_api
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - FLASK_ENV=production
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    depends_on:
+      - mosquitto
+    networks:
+      - iot_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api/health"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+
+networks:
+  iot_network:
+    driver: bridge
+
+volumes:
+  mosquitto_data:
+  pricing_data:
