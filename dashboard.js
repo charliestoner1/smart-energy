@@ -150,7 +150,7 @@ function connectMQTT() {
 
     fetchPricingData(); // immediate fetch
     fetchPriceHistory(); // load last 6 hours of pricing history
-    pricingUpdateInterval = setInterval(fetchPricingData, 30000); // every 5 minutes
+    pricingUpdateInterval = setInterval(fetchPricingData, 300000); // every 5 minutes
 
     
 

@@ -9,6 +9,19 @@
 
 #include <SPI.h>
 #include <RF24.h>
+#include <WiFi.h>
+#include <PubSubClient.h>
+
+// -------- WiFi & MQTT --------
+const char* ssid = "your_wifi_ssid";         // need to set this
+const char* password = "your_wifi_password"; // need to set this
+const char* mqtt_server = "1e1a4e5c581e4bc3a697f8937d7fb9e4.s1.eu.hivemq.cloud";
+const int mqtt_port = 8883;
+const char* mqtt_user = "omeravi";
+const char* mqtt_password = "Omeromer1!";
+
+WiFiClientSecure espClient;
+PubSubClient mqttClient(espClient);
 
 // ---------------- PIN MAP ----------------
 const int TRIG_A = 21;
@@ -32,6 +45,7 @@ struct Telemetry {
 
 // --------- SETTINGS ---------
 const unsigned long SEND_PERIOD_MS = 250;
+const unsigned long MQTT_PERIOD_MS = 5000;
 const unsigned long PULSE_TIMEOUT_US = 30000UL; // 30ms ~5m
 const int MIN_CM = 2, MAX_CM = 400;
 
@@ -64,6 +78,61 @@ int16_t readDistanceCM(int trig, int echo) {
   return (int16_t)med;
 }
 
+// MQTT RECONNECT FUNCTION
+void reconnectMQTT() {
+  if (!mqttClient.connected()) {
+    Serial.print("Connecting to MQTT...");
+    String clientId = "ESP32Sensor-" + String(random(0xffff), HEX);
+    
+    if (mqttClient.connect(clientId.c_str(), mqtt_user, mqtt_password)) {
+      Serial.println(" OK");
+    } else {
+      Serial.print(" FAIL (rc=");
+      Serial.print(mqttClient.state());
+      Serial.println(")");
+    }
+  }
+}
+
+// PUBLISH TO MQTT FOR DASHBOARD
+void publishToMQTT() {
+  // Read current distances
+  int16_t distA = readDistanceCM(TRIG_A, ECHO_A);
+  int16_t distB = readDistanceCM(TRIG_B, ECHO_B);
+  
+  // Determine if room is occupied (distance < 100cm = someone present)
+  bool occupied = (distA > 0 && distA < 100) || (distB > 0 && distB < 100);
+  
+  // Simulate missing sensors (temporary until you add real ones)
+  float tempC = 24.0;
+  float humidity = 60.0;
+  int pir = occupied ? 1 : 0;
+  
+  // Estimate power: occupied = ~150W (fan running), empty = ~50W (baseline)
+  float amps = occupied ? 1.25 : 0.42;
+  
+  // Build JSON payload
+  String payload = "{";
+  payload += "\"ts\":" + String(millis()) + ",";
+  payload += "\"tC\":" + String(tempC, 1) + ",";
+  payload += "\"rh\":" + String(humidity, 1) + ",";
+  payload += "\"pir\":" + String(pir) + ",";
+  payload += "\"voltage\":120,";
+  payload += "\"amps\":" + String(amps, 2);
+  payload += "}";
+  
+  // Publish
+  bool ok = mqttClient.publish("sensors/room1/telemetry", payload.c_str());
+  
+  Serial.print("MQTT  ");
+  Serial.print(occupied ? "👤" : "🚫");
+  Serial.print("  ");
+  Serial.print((int)(amps * 120));
+  Serial.print("W  pub=");
+  Serial.println(ok ? "OK" : "FAIL");
+}
+
+
 unsigned long lastSend = 0;
 
 void setup() {
@@ -84,9 +153,31 @@ void setup() {
   radio.stopListening();             // TX mode
 
   Serial.println("Sensor Hub ready: sending to 'SENS1'");
+
+  // connect to WiFi
+  Serial.print("Connecting to WiFi");
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println(" OK");
+  Serial.print("IP: ");
+  Serial.println(WiFi.localIP());
+
+  // setup MQTT
+  espClient.setInsecure(); // For testing
+  mqttClient.setServer(mqtt_server, mqtt_port);
+
+  reconnectMQTT();
 }
 
 void loop() {
+  if (!mqttClient.connected()) {
+    reconnectMQTT();
+  }
+  mqttClient.loop();
+
   if (millis() - lastSend >= SEND_PERIOD_MS) {
     lastSend = millis();
 
@@ -101,5 +192,10 @@ void loop() {
     Serial.print("TX  A:"); Serial.print(t.distA_cm);
     Serial.print("cm  B:"); Serial.print(t.distB_cm);
     Serial.print("  send="); Serial.println(ok ? "OK" : "FAIL");
+  }
+
+  if (millis() - lastMqtt >= MQTT_PERIOD_MS) {
+    lastMqtt = millis();
+    publishToMQTT();
   }
 }
