@@ -29,8 +29,13 @@
           <h3>Temperature & Humidity</h3>
           <canvas id="tempChart"></canvas>
         </div>
-      </div>
 
+        <div class="card">
+          <h3>Electricity Pricing History</h3>
+          <canvas id="pricingChart"></canvas>
+        </div>
+      </div>
+      
       <div class="grid">
         <div class="card">
           <h3>Status</h3>
@@ -54,6 +59,13 @@
             <button class="btn-off" onclick="sendCommand('lamp','off')">Lamp OFF</button>
           </div>
           <button class="btn-override" id="overrideBtn" onclick="toggleOverride()">🚨 EMERGENCY OVERRIDE</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Electricity Pricing</h3>
+        <div id="pricingInfo" class="pricing-info">
+          Loading pricing data...
         </div>
       </div>
 
