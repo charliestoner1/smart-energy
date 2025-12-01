@@ -1,251 +1,349 @@
+import { Chart } from "@/components/ui/chart"
+// ============================================
+// 🔧 CONFIGURATION - UPDATE THESE VALUES
+// ============================================
+const CONFIG = {
+  // Your MQTT broker URL (WebSocket)
+  // Examples:
+  // - Local: 'ws://192.168.1.100:8000/mqtt'
+  // - Cloud: 'wss://your-broker.com:8883/mqtt'
+  // - Test broker: 'wss://test.mosquitto.org:8081/mqtt'
+  BROKER_URL: "wss://test.mosquitto.org:8081/mqtt",
 
-const BROKER_URL = 'wss://1e1a4e5c581e4bc3a697f8937d7fb9e4.s1.eu.hivemq.cloud:8884/mqtt';
+  // MQTT Topics (from your paper)
+  TOPICS: {
+    TELEMETRY: "sensors/room1/telemetry",
+    CONTROL_CMD: "control/room1/cmd",
+    CONTROL_ACK: "control/room1/ack",
+    ALERTS: "alerts/room1/anomaly",
+  },
 
+  // GRU Tiered Rates (from your paper)
+  RATES: [
+    { max: 250, rate: 0.11 }, // T1: 0-250 kWh
+    { max: 750, rate: 0.145 }, // T2: 251-750 kWh
+    { max: Number.POSITIVE_INFINITY, rate: 0.185 }, // T3: >750 kWh
+  ],
+}
 
-const mqttOptions = {
-  username: 'omeravi',          
-  password: 'Omeromer1!', 
-  keepalive: 60,
-  reconnectPeriod: 2000,
-  connectTimeout: 10000
-};
+// ============================================
+// Global State
+// ============================================
+let mqttClient = null
+let overrideActive = false
+let powerChart, tempChart
+let cumulativeEnergy = 0 // kWh
+let lastTimestamp = Date.now()
 
+// Chart data storage
+const chartData = {
+  power: { labels: [], data: [] },
+  temp: { labels: [], tempData: [], humidData: [] },
+}
 
-const TOPICS = {
-  telemetry: 'sensors/room1/telemetry',
-  control:   'control/room1/cmd',
-  alerts:    'alerts/room1/anomaly',
-  stateFan:  'control/room1/state/fan',
-  stateLamp: 'control/room1/state/lamp'
-};
+// MQTT library import
+const mqtt = require("mqtt")
 
+// ============================================
+// Initialize Dashboard
+// ============================================
+window.onload = () => {
+  initCharts()
+  connectMQTT()
+}
 
-const RATES = [
-  { block: 250, rate: 0.110 },
-  { block: 500, rate: 0.145 },
-  { block: Infinity, rate: 0.185 }
-];
-
-
-let mqttClient = null;
-let overrideActive = false;
-let accumulatedWh = 0;
-let lastSampleTsMs = null;
-
-const deviceStates = { fan: false, lamp: false, pir: false };
-
-
-const powerData = { labels: [], datasets: [{ label: 'Power (W)', data: [], borderColor: '#00d9ff', tension: 0.35, pointRadius: 0 }] };
-const tempData  = {
-  labels: [],
-  datasets: [
-    { label: 'Temp (°C)',    data: [], borderColor: '#e94560', tension: 0.35, pointRadius: 0, yAxisID: 'y'  },
-    { label: 'Humidity (%)', data: [], borderColor: '#00d9ff', tension: 0.35, pointRadius: 0, yAxisID: 'y1' }
-  ]
-};
-
-const powerChart = new Chart(document.getElementById('powerChart'), {
-  type: 'line',
-  data: powerData,
-  options: {
-    responsive: true,
-    maintainAspectRatio: true,
-    animation: false,
-    scales: { y: { beginAtZero: true, title: { display: true, text: 'Power (W)' } } },
-    plugins: { legend: { display: true } }
-  }
-});
-
-const tempChart = new Chart(document.getElementById('tempChart'), {
-  type: 'line',
-  data: tempData,
-  options: {
-    responsive: true,
-    maintainAspectRatio: true,
-    animation: false,
-    scales: {
-      y:  { position: 'left',  title: { display: true, text: 'Temp (°C)' } },
-      y1: { position: 'right', title: { display: true, text: 'Humidity (%)' }, grid: { drawOnChartArea: false } }
+// ============================================
+// Chart Initialization
+// ============================================
+function initCharts() {
+  // Power Chart
+  const powerCtx = document.getElementById("powerChart").getContext("2d")
+  powerChart = new Chart(powerCtx, {
+    type: "line",
+    data: {
+      labels: [],
+      datasets: [
+        {
+          label: "Power (W)",
+          data: [],
+          borderColor: "#667eea",
+          backgroundColor: "rgba(102, 126, 234, 0.1)",
+          tension: 0.4,
+          fill: true,
+        },
+      ],
     },
-    plugins: { legend: { display: true } }
-  }
-});
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        y: { beginAtZero: true, title: { display: true, text: "Watts" } },
+      },
+    },
+  })
 
-function addDataPoint(chart, data, label, value) {
-  data.labels.push(label);
-  if (Array.isArray(value)) {
-    value.forEach((v, i) => data.datasets[i].data.push(v));
-  } else {
-    data.datasets[0].data.push(value);
-  }
-  const MAX = 60;
-  if (data.labels.length > MAX) {
-    data.labels.shift();
-    data.datasets.forEach(ds => ds.data.shift());
-  }
-  chart.update('none');
+  // Temperature & Humidity Chart
+  const tempCtx = document.getElementById("tempChart").getContext("2d")
+  tempChart = new Chart(tempCtx, {
+    type: "line",
+    data: {
+      labels: [],
+      datasets: [
+        {
+          label: "Temperature (°C)",
+          data: [],
+          borderColor: "#ef4444",
+          backgroundColor: "rgba(239, 68, 68, 0.1)",
+          yAxisID: "y",
+          tension: 0.4,
+        },
+        {
+          label: "Humidity (%)",
+          data: [],
+          borderColor: "#3b82f6",
+          backgroundColor: "rgba(59, 130, 246, 0.1)",
+          yAxisID: "y1",
+          tension: 0.4,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        y: { type: "linear", position: "left", title: { display: true, text: "°C" } },
+        y1: {
+          type: "linear",
+          position: "right",
+          title: { display: true, text: "%" },
+          grid: { drawOnChartArea: false },
+        },
+      },
+    },
+  })
 }
 
-
+// ============================================
+// MQTT Connection
+// ============================================
 function connectMQTT() {
-  mqttClient = mqtt.connect(BROKER_URL, mqttOptions);
+  updateConnectionStatus("connecting", "Connecting...")
 
-  mqttClient.on('connect', () => {
-    setBrokerStatus(true);
-    console.log('✅ Connected to HiveMQ Cloud');
-    mqttClient.subscribe([
-      TOPICS.telemetry,
-      TOPICS.alerts,
-      TOPICS.stateFan,
-      TOPICS.stateLamp
-    ], (err) => { if (err) console.error('Subscribe error', err); });
-  });
+  try {
+    mqttClient = mqtt.connect(CONFIG.BROKER_URL)
 
-  mqttClient.on('reconnect', () => setBrokerStatus(false));
-  mqttClient.on('close', () => setBrokerStatus(false));
-  mqttClient.on('error', (err) => { console.error('MQTT error:', err); setBrokerStatus(false); });
+    mqttClient.on("connect", () => {
+      console.log("[v0] MQTT Connected")
+      updateConnectionStatus("connected", "Connected")
 
-  mqttClient.on('message', (topic, payload) => {
-    let data;
-    try { data = JSON.parse(payload.toString()); }
-    catch { return; } // ignore invalid JSON
-    if      (topic === TOPICS.telemetry)  handleTelemetry(data);
-    else if (topic === TOPICS.alerts)     handleAlert(data);
-    else if (topic === TOPICS.stateFan)   handleStateEcho('fan', data);
-    else if (topic === TOPICS.stateLamp)  handleStateEcho('lamp', data);
-  });
-}
+      // Subscribe to topics
+      mqttClient.subscribe(CONFIG.TOPICS.TELEMETRY, { qos: 1 })
+      mqttClient.subscribe(CONFIG.TOPICS.CONTROL_ACK, { qos: 1 })
+      mqttClient.subscribe(CONFIG.TOPICS.ALERTS, { qos: 1 })
+    })
 
-function setBrokerStatus(connected) {
-  const el = document.getElementById('statusBroker');
-  el.textContent = connected ? 'Broker: Connected' : 'Broker: Disconnected';
-  el.classList.toggle('active', connected);
-}
+    mqttClient.on("message", (topic, message) => {
+      try {
+        const data = JSON.parse(message.toString())
+        handleMQTTMessage(topic, data)
+      } catch (e) {
+        console.error("[v0] Error parsing MQTT message:", e)
+      }
+    })
 
+    mqttClient.on("error", (error) => {
+      console.error("[v0] MQTT Error:", error)
+      updateConnectionStatus("disconnected", "Error")
+    })
 
-function handleTelemetry(d) {
-  const tsMs = coerceTsMs(d.ts);
-  const timeLabel = new Date(tsMs).toLocaleTimeString();
-
-  const voltage = isFiniteNumber(d.voltage) ? d.voltage : 120;
-  const amps    = isFiniteNumber(d.amps) ? d.amps : 0;
-  const powerW  = +(voltage * amps).toFixed(1);
-
-  addDataPoint(powerChart, powerData, timeLabel, powerW);
-
-  const t = isFiniteNumber(d.tC) ? +d.tC.toFixed(1) : null;
-  const h = isFiniteNumber(d.rh) ? +d.rh.toFixed(1) : null;
-  addDataPoint(tempChart, tempData, timeLabel, [t, h]);
-
-  deviceStates.pir = d.pir === 1 || d.pir === true;
-  setStatus('PIR', deviceStates.pir, v => v ? 'PIR: Active' : 'PIR: Inactive');
-
-  if (lastSampleTsMs != null && tsMs > lastSampleTsMs) {
-    const dtHours = (tsMs - lastSampleTsMs) / 3_600_000;
-    accumulatedWh += powerW * dtHours;
+    mqttClient.on("close", () => {
+      console.log("[v0] MQTT Disconnected")
+      updateConnectionStatus("disconnected", "Disconnected")
+    })
+  } catch (error) {
+    console.error("[v0] Failed to connect:", error)
+    updateConnectionStatus("disconnected", "Failed")
   }
-  lastSampleTsMs = tsMs;
-
-  const kWh = accumulatedWh / 1000;
-  document.getElementById('projectedCost').textContent = costForKWh(kWh).toFixed(2);
 }
 
-
-function handleAlert(d) {
-  const msg = d.message || 'Anomaly detected';
-  const div = document.getElementById('alerts');
-  div.innerHTML = `<div>⚠️ ${escapeHtml(msg)}</div>` + div.innerHTML;
+// ============================================
+// Handle MQTT Messages
+// ============================================
+function handleMQTTMessage(topic, data) {
+  if (topic === CONFIG.TOPICS.TELEMETRY) {
+    // Expected format: {"ts": 1738176000, "tC": 24.1, "rh": 58, "pir": 1, "amps": 0.42}
+    updateTelemetry(data)
+  } else if (topic === CONFIG.TOPICS.CONTROL_ACK) {
+    console.log("[v0] Control acknowledged:", data)
+  } else if (topic === CONFIG.TOPICS.ALERTS) {
+    addAlert(data.message || JSON.stringify(data))
+  }
 }
 
+// ============================================
+// Update Telemetry Display
+// ============================================
+function updateTelemetry(data) {
+  const { ts, tC, rh, pir, amps } = data
 
-function publishCmd(device, action, reason = 'manual') {
-  if (!mqttClient || !mqttClient.connected) { alert('Broker not connected yet.'); return; }
-  mqttClient.publish(TOPICS.control, JSON.stringify({ device, action, reason }));
+  // Calculate power (assuming 120V)
+  const voltage = 120
+  const power = voltage * amps
+
+  // Update energy consumption
+  const now = Date.now()
+  const hoursPassed = (now - lastTimestamp) / (1000 * 60 * 60)
+  cumulativeEnergy += (power / 1000) * hoursPassed
+  lastTimestamp = now
+
+  // Update charts
+  const timeLabel = new Date(ts * 1000).toLocaleTimeString()
+  updateChart(powerChart, chartData.power, timeLabel, power)
+  updateChart(tempChart, chartData.temp, timeLabel, tC, rh)
+
+  // Update status badges
+  document.getElementById("pirStatus").textContent = pir ? "Active" : "Inactive"
+  document.getElementById("pirStatus").className = pir ? "badge active" : "badge inactive"
+
+  // Update projected cost
+  updateProjectedCost()
 }
 
+// ============================================
+// Update Chart Helper
+// ============================================
+function updateChart(chart, storage, label, ...values) {
+  storage.labels.push(label)
+  values.forEach((val, idx) => {
+    if (!storage.data[idx]) storage.data[idx] = []
+    storage.data[idx].push(val)
+  })
+
+  // Keep last 20 points
+  if (storage.labels.length > 20) {
+    storage.labels.shift()
+    storage.data.forEach((arr) => arr.shift())
+  }
+
+  chart.data.labels = storage.labels
+  chart.data.datasets.forEach((dataset, idx) => {
+    dataset.data = storage.data[idx] || []
+  })
+  chart.update("none")
+}
+
+// ============================================
+// Calculate Projected Cost (GRU Tiered)
+// ============================================
+function updateProjectedCost() {
+  let cost = 0
+  let remaining = cumulativeEnergy
+
+  for (const tier of CONFIG.RATES) {
+    const tierUsage = Math.min(remaining, tier.max)
+    cost += tierUsage * tier.rate
+    remaining -= tierUsage
+    if (remaining <= 0) break
+  }
+
+  // Project to full day
+  const hoursElapsed = (Date.now() - lastTimestamp) / (1000 * 60 * 60)
+  const dailyProjection = (cost / hoursElapsed) * 24
+
+  document.getElementById("projectedCost").textContent = `$${dailyProjection.toFixed(2)}`
+}
+
+// ============================================
+// Send Control Command
+// ============================================
 function sendCommand(device, action) {
   if (overrideActive) {
-    alert('Manual override is active. Deactivate to control devices.');
-    return;
+    alert("Manual override is active. Deactivate to control devices.")
+    return
   }
-  publishCmd(device, action, 'manual');
-  deviceStates[device] = action === 'on';
-  updateDeviceStatus(device);
+
+  if (!mqttClient || !mqttClient.connected) {
+    alert("MQTT not connected. Cannot send command.")
+    return
+  }
+
+  const command = {
+    device: device,
+    action: action,
+    reason: "manual",
+    timestamp: Math.floor(Date.now() / 1000),
+  }
+
+  mqttClient.publish(CONFIG.TOPICS.CONTROL_CMD, JSON.stringify(command), { qos: 1 })
+
+  // Update UI
+  const statusId = device + "Status"
+  document.getElementById(statusId).textContent = action.toUpperCase()
+  document.getElementById(statusId).className = action === "on" ? "badge active" : "badge inactive"
 }
 
+// ============================================
+// Emergency Override
+// ============================================
 function toggleOverride() {
-  overrideActive = !overrideActive;
-  const btn = document.getElementById('overrideBtn');
-  const banner = document.getElementById('overrideBanner');
+  overrideActive = !overrideActive
+
+  const banner = document.getElementById("overrideBanner")
+  const btn = document.getElementById("overrideBtn")
+  const controls = document.querySelectorAll(".control-btn")
 
   if (overrideActive) {
-    publishCmd('fan', 'off', 'override');
-    publishCmd('lamp', 'off', 'override');
-    deviceStates.fan = false; deviceStates.lamp = false;
-    updateDeviceStatus('fan'); updateDeviceStatus('lamp');
-    btn.textContent = '✓ OVERRIDE ACTIVE — CLICK TO RESTORE';
-    btn.classList.add('active');
-    banner.style.display = 'block';
+    // Activate override - shut down all devices
+    banner.style.display = "block"
+    btn.textContent = "✅ OVERRIDE ACTIVE - CLICK TO RESTORE"
+    btn.classList.add("active")
+    controls.forEach((btn) => (btn.disabled = true))
+
+    // Send shutdown commands
+    sendCommand("fan", "off")
+    sendCommand("lamp", "off")
+
+    document.getElementById("modeSelect").value = "manual"
+    document.getElementById("modeSelect").disabled = true
   } else {
-    btn.textContent = '🚨 EMERGENCY OVERRIDE';
-    btn.classList.remove('active');
-    banner.style.display = 'none';
+    // Deactivate override
+    banner.style.display = "none"
+    btn.textContent = "🚨 EMERGENCY OVERRIDE"
+    btn.classList.remove("active")
+    controls.forEach((btn) => (btn.disabled = false))
+    document.getElementById("modeSelect").disabled = false
   }
 }
 
-function handleStateEcho(device, payload) {
-  deviceStates[device] = !!payload.on;
-  updateDeviceStatus(device);
+// ============================================
+// Update Connection Status
+// ============================================
+function updateConnectionStatus(status, text) {
+  const dot = document.querySelector(".status-dot")
+  const statusText = document.getElementById("statusText")
+  const brokerStatus = document.getElementById("brokerStatus")
+
+  dot.className = `status-dot ${status}`
+  statusText.textContent = text
+  brokerStatus.textContent = text
+  brokerStatus.className = status === "connected" ? "badge active" : "badge inactive"
 }
 
-function updateDeviceStatus(device) {
-  const id = `status${device.charAt(0).toUpperCase()}${device.slice(1)}`;
-  const el = document.getElementById(id);
-  const on = !!deviceStates[device];
-  el.textContent = `${capitalize(device)}: ${on ? 'ON' : 'OFF'}`;
-  el.classList.toggle('active', on);
-}
+// ============================================
+// Add Alert
+// ============================================
+function addAlert(message) {
+  const alertsList = document.getElementById("alertsList")
+  const noAlerts = alertsList.querySelector(".no-alerts")
+  if (noAlerts) noAlerts.remove()
 
+  const alertDiv = document.createElement("div")
+  alertDiv.className = "alert-item"
+  alertDiv.textContent = `⚠️ ${message}`
+  alertsList.prepend(alertDiv)
 
-function costForKWh(kWhTotal) {
-  let remaining = kWhTotal;
-  let cost = 0;
-  for (const tier of RATES) {
-    const block = Math.min(remaining, tier.block);
-    cost += block * tier.rate;
-    remaining -= block;
-    if (remaining <= 0) break;
+  // Keep only last 5 alerts
+  while (alertsList.children.length > 5) {
+    alertsList.lastChild.remove()
   }
-  return cost;
 }
-
-function setStatus(name, active, textFn) {
-  const el = document.getElementById(`status${name}`);
-  el.textContent = typeof textFn === 'function'
-    ? textFn(active)
-    : `${name}: ${active ? 'Active' : 'Inactive'}`;
-  el.classList.toggle('active', !!active);
-}
-
-function isFiniteNumber(x){ return Number.isFinite(+x); }
-
-function coerceTsMs(ts) {
-  const n = Number(ts);
-  if (!Number.isFinite(n)) return Date.now();
-  if (n > 1e12) return n;        
-  if (n > 1e9)  return n * 1000; 
-  return Date.now();
-}
-
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
-}
-
-function capitalize(s){ return s ? s[0].toUpperCase()+s.slice(1) : s; }
-
-
-connectMQTT();
-
-
-window.sendCommand = sendCommand;
-window.toggleOverride = toggleOverride;
