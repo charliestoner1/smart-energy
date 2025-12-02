@@ -1,121 +1,172 @@
 /*
-  Control Hub (ESP32) — Receives ultrasonic distances from Sensor Hub via NRF24L01+
-  - Room A controls: FAN1 (GPIO 27), LED1 (GPIO 25)
-  - Room B controls: FAN2 (GPIO 33), LED2 (GPIO 26)
-  - NRF: CE=4, CSN=5 (3.3V only; add 10–47uF cap at VCC-GND on the module)
+  Control Hub - Smart Energy System
+  Pins: Room A (LED=25, Fan=27, Btn=14), Room B (LED=26, Fan=33, Btn=12)
+  NRF24L01+: CE=4, CSN=5
 */
 
 #include <SPI.h>
 #include <RF24.h>
 
-// ----------------- PIN MAP (match your working wiring) -----------------
-const int PIN_LED1 = 25;  // pairs with Fan1 / Room A
-const int PIN_LED2 = 26;  // pairs with Fan2 / Room B
-const int PIN_FAN1 = 27;  // Room A fan (via NPN transistor base -> 1k)
-const int PIN_FAN2 = 33;  // Room B fan (via NPN transistor base -> 1k)
-const int PIN_STATUS = 2; // onboard LED
+// Pins
+const int PIN_LED1 = 25, PIN_FAN1 = 27, PIN_BTN_A = 14;
+const int PIN_LED2 = 26, PIN_FAN2 = 33, PIN_BTN_B = 12;
+const int PIN_STATUS = 2;
+#define NRF_CE 4
+#define NRF_CSN 5
 
-// NRF24L01+ (VSPI pins are hardware: SCK=18, MISO=19, MOSI=23)
-#define NRF_CE   4
-#define NRF_CSN  5
 RF24 radio(NRF_CE, NRF_CSN);
-
-// Use two addressing pipes: sensor writes to "SENS1", control listens there.
-// (Make sure your friend’s sensor hub uses the same addresses.)
 const byte PIPE_RX[6] = "SENS1";
 
-// ----------------- PAYLOAD DEFINITION -----------------
 struct Telemetry {
-  uint32_t ms;       // millis() on sender
-  int16_t distA_cm;  // Room A distance in cm (-1 if timeout)
-  int16_t distB_cm;  // Room B distance in cm (-1 if timeout)
+  uint32_t ms;
+  int16_t distA_cm, distB_cm;
+  int16_t tempA_x10, tempB_x10;
+  uint8_t humidA, humidB;
+  uint8_t ecoMode;
+  uint8_t priceTier;
+  int8_t tempOffset;
 };
 
-// ----------------- STATE -----------------
+const int OCCUPIED_CUTOFF_CM = 150;
+const int MIN_VALID_CM = 2, MAX_VALID_CM = 400;
+const unsigned long PACKET_TIMEOUT_MS = 10000;
+const unsigned long DEBOUNCE_MS = 200;
+const char* TIER_NAMES[] = {"VERY_LOW", "LOW", "NORMAL", "HIGH", "VERY_HIGH", "CRITICAL"};
+
+Telemetry lastTelemetry;
 unsigned long lastPacketMs = 0;
-bool roomA_occupied = false;
-bool roomB_occupied = false;
+bool telemetryValid = false;
+bool ecoMode = true;
+bool roomA_occupied = false, roomB_occupied = false;
+bool roomA_deviceOn = false, roomB_deviceOn = false;
+bool lastBtnA = HIGH, lastBtnB = HIGH;
+unsigned long lastBtnPressA = 0, lastBtnPressB = 0;
+bool manualStateA = false, manualStateB = false;
 
-// Tunables
-const int   OCCUPIED_CUTOFF_CM = 150; // <= this => "occupied"
-const int   MIN_VALID_CM       = 2;   // filter nonsense
-const int   MAX_VALID_CM       = 400; // ~4m cap
-const unsigned long PACKET_TIMEOUT_MS = 10'000; // lose packets -> fail safe
-
-// ----------------- HELPERS -----------------
-void setFanLed(int fanPin, int ledPin, bool on) {
-  // With NPN driver for fans, HIGH on the GPIO = fan ON.
+void setRoomDevices(int fanPin, int ledPin, bool on) {
   digitalWrite(fanPin, on ? HIGH : LOW);
   digitalWrite(ledPin, on ? HIGH : LOW);
 }
 
 bool distanceMeansOccupied(int16_t cm) {
-  if (cm < 0) return false; // timeout/out-of-range
-  if (cm < MIN_VALID_CM || cm > MAX_VALID_CM) return false;
-  return (cm <= OCCUPIED_CUTOFF_CM);
+  return (cm >= MIN_VALID_CM && cm <= MAX_VALID_CM && cm <= OCCUPIED_CUTOFF_CM);
 }
 
-// ----------------- SETUP -----------------
+bool shouldDeviceBeOn(bool occupied, float tempC, uint8_t priceTier) {
+  if (priceTier >= 5) return false;
+  if (priceTier == 4) return occupied && (tempC > 28.0);
+  if (priceTier == 3) return occupied && (tempC > 26.0);
+  return occupied;
+}
+
+void applyEcoModeControl() {
+  float tempA = lastTelemetry.tempA_x10 / 10.0;
+  float tempB = lastTelemetry.tempB_x10 / 10.0;
+  uint8_t tier = lastTelemetry.priceTier;
+  
+  roomA_occupied = distanceMeansOccupied(lastTelemetry.distA_cm);
+  roomB_occupied = distanceMeansOccupied(lastTelemetry.distB_cm);
+  roomA_deviceOn = shouldDeviceBeOn(roomA_occupied, tempA, tier);
+  roomB_deviceOn = shouldDeviceBeOn(roomB_occupied, tempB, tier);
+  
+  setRoomDevices(PIN_FAN1, PIN_LED1, roomA_deviceOn);
+  setRoomDevices(PIN_FAN2, PIN_LED2, roomB_deviceOn);
+  
+  Serial.printf("ECO [%s] A:%d->%s B:%d->%s\n", TIER_NAMES[tier],
+    roomA_occupied, roomA_deviceOn?"ON":"OFF", roomB_occupied, roomB_deviceOn?"ON":"OFF");
+}
+
+void checkRoomButtons() {
+  unsigned long now = millis();
+  
+  bool currentBtnA = digitalRead(PIN_BTN_A);
+  if (currentBtnA == LOW && lastBtnA == HIGH && now - lastBtnPressA > DEBOUNCE_MS) {
+    manualStateA = !manualStateA;
+    lastBtnPressA = now;
+    Serial.printf("Btn A -> Room A: %s\n", manualStateA ? "ON" : "OFF");
+  }
+  lastBtnA = currentBtnA;
+  
+  bool currentBtnB = digitalRead(PIN_BTN_B);
+  if (currentBtnB == LOW && lastBtnB == HIGH && now - lastBtnPressB > DEBOUNCE_MS) {
+    manualStateB = !manualStateB;
+    lastBtnPressB = now;
+    Serial.printf("Btn B -> Room B: %s\n", manualStateB ? "ON" : "OFF");
+  }
+  lastBtnB = currentBtnB;
+}
+
+void applyManualModeControl() {
+  checkRoomButtons();
+  setRoomDevices(PIN_FAN1, PIN_LED1, manualStateA);
+  setRoomDevices(PIN_FAN2, PIN_LED2, manualStateB);
+  roomA_deviceOn = manualStateA;
+  roomB_deviceOn = manualStateB;
+}
+
+void processNRFPackets() {
+  while (radio.available()) {
+    radio.read(&lastTelemetry, sizeof(lastTelemetry));
+    lastPacketMs = millis();
+    telemetryValid = true;
+    
+    bool newEcoMode = (lastTelemetry.ecoMode == 1);
+    if (newEcoMode != ecoMode) {
+      Serial.printf("\n*** MODE: %s ***\n\n", newEcoMode ? "ECO" : "MANUAL");
+      ecoMode = newEcoMode;
+      if (ecoMode) { manualStateA = false; manualStateB = false; }
+    }
+    
+    digitalWrite(PIN_STATUS, HIGH); delay(10); digitalWrite(PIN_STATUS, LOW);
+    Serial.printf("RX: d[%d,%d] t[%.1f,%.1f] eco=%d tier=%d\n",
+      lastTelemetry.distA_cm, lastTelemetry.distB_cm,
+      lastTelemetry.tempA_x10/10.0, lastTelemetry.tempB_x10/10.0,
+      lastTelemetry.ecoMode, lastTelemetry.priceTier);
+  }
+}
+
+void applyFailsafe() {
+  setRoomDevices(PIN_FAN1, PIN_LED1, false);
+  setRoomDevices(PIN_FAN2, PIN_LED2, false);
+  roomA_deviceOn = false; roomB_deviceOn = false;
+  
+  static unsigned long lastBlink = 0;
+  if (millis() - lastBlink > 500) { digitalWrite(PIN_STATUS, !digitalRead(PIN_STATUS)); lastBlink = millis(); }
+}
+
 void setup() {
   Serial.begin(115200);
-
-  pinMode(PIN_LED1, OUTPUT);
-  pinMode(PIN_LED2, OUTPUT);
-  pinMode(PIN_FAN1, OUTPUT);
-  pinMode(PIN_FAN2, OUTPUT);
+  pinMode(PIN_LED1, OUTPUT); pinMode(PIN_LED2, OUTPUT);
+  pinMode(PIN_FAN1, OUTPUT); pinMode(PIN_FAN2, OUTPUT);
   pinMode(PIN_STATUS, OUTPUT);
-
-  // Start with everything OFF
-  setFanLed(PIN_FAN1, PIN_LED1, false);
-  setFanLed(PIN_FAN2, PIN_LED2, false);
-
-  // NRF init
-  if (!radio.begin()) {
-    Serial.println("NRF init failed! Check wiring/3.3V/CE/CSN.");
+  pinMode(PIN_BTN_A, INPUT_PULLUP);
+  pinMode(PIN_BTN_B, INPUT_PULLUP);
+  
+  setRoomDevices(PIN_FAN1, PIN_LED1, false);
+  setRoomDevices(PIN_FAN2, PIN_LED2, false);
+  
+  if (radio.begin()) {
+    radio.setPALevel(RF24_PA_LOW);
+    radio.setDataRate(RF24_1MBPS);
+    radio.setChannel(108);
+    radio.openReadingPipe(1, PIPE_RX);
+    radio.startListening();
   }
-  radio.setPALevel(RF24_PA_LOW);    // start conservative (can try RF24_PA_HIGH if needed)
-  radio.setDataRate(RF24_1MBPS);    // robust default
-  radio.setChannel(108);            // avoid WiFi band center (optional)
-  radio.openReadingPipe(1, PIPE_RX);
-  radio.startListening();
-
-  Serial.println("Control Hub ready: listening for telemetry on pipe 'SENS1'");
+  
+  Serial.println("Control Hub Ready");
+  Serial.println("Room buttons active in MANUAL mode only");
 }
 
-// ----------------- LOOP -----------------
 void loop() {
-  // Read any NRF packets
-  while (radio.available()) {
-    Telemetry t;
-    radio.read(&t, sizeof(t));
-    lastPacketMs = millis();
-
-    // Decide occupancy per room
-    roomA_occupied = distanceMeansOccupied(t.distA_cm);
-    roomB_occupied = distanceMeansOccupied(t.distB_cm);
-
-    // Actuate
-    setFanLed(PIN_FAN1, PIN_LED1, roomA_occupied);
-    setFanLed(PIN_FAN2, PIN_LED2, roomB_occupied);
-
-    // Blink status briefly on packet
-    digitalWrite(PIN_STATUS, HIGH);
-    delay(20);
-    digitalWrite(PIN_STATUS, LOW);
-
-    // Debug
-    Serial.print("RX  A:"); Serial.print(t.distA_cm);
-    Serial.print("cm  B:"); Serial.print(t.distB_cm);
-    Serial.print("cm  ->  occA:"); Serial.print(roomA_occupied);
-    Serial.print(" occB:"); Serial.println(roomB_occupied);
+  processNRFPackets();
+  
+  if (millis() - lastPacketMs < PACKET_TIMEOUT_MS && telemetryValid) {
+    if (ecoMode) applyEcoModeControl();
+    else applyManualModeControl();
+  } else {
+    applyFailsafe();
+    static unsigned long lastWarn = 0;
+    if (millis() - lastWarn > 5000) { Serial.println("FAILSAFE - No packets"); lastWarn = millis(); }
   }
-
-  // Fail-safe: if no packets for a while, turn everything off
-  if (millis() - lastPacketMs > PACKET_TIMEOUT_MS) {
-    setFanLed(PIN_FAN1, PIN_LED1, false);
-    setFanLed(PIN_FAN2, PIN_LED2, false);
-  }
-
-  // Small idle delay
   delay(5);
 }

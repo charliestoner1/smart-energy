@@ -1,201 +1,251 @@
 /*
-  Sensor Hub (ESP32) — Sends distances for Room A/B via NRF24L01+
-  Pins:
-    HC-SR04 A: TRIG=21, ECHO=34 (ECHO via 10k/15k divider!)
-    HC-SR04 B: TRIG=22, ECHO=35 (ECHO via 10k/15k divider!)
-    NRF24L01+: CE=4, CSN=5  (3.3V only; add 10–47uF cap at module)
-               SCK=18, MISO=19, MOSI=23 (VSPI defaults)
+  Sensor Hub - Smart Energy System
+  Pins: HC-SR04 A (21/34), B (22/35), DHT22 A (27), B (33), Mode Button (14)
+  NRF24L01+: CE=4, CSN=5
 */
 
 #include <SPI.h>
 #include <RF24.h>
 #include <WiFi.h>
+#include <WiFiClientSecure.h>
 #include <PubSubClient.h>
+#include <HTTPClient.h>
+#include <DHT.h>
+#include <ArduinoJson.h>
 
-// -------- WiFi & MQTT --------
-const char* ssid = "your_wifi_ssid";         // need to set this
-const char* password = "your_wifi_password"; // need to set this
-const char* mqtt_server = "1e1a4e5c581e4bc3a697f8937d7fb9e4.s1.eu.hivemq.cloud";
-const int mqtt_port = 8883;
-const char* mqtt_user = "omeravi";
-const char* mqtt_password = "Omeromer1!";
+// WiFi & API - UPDATE THESE
+const char* WIFI_SSID = "YOUR_WIFI_SSID";
+const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
+const char* PRICING_API_URL = "http://YOUR_COMPUTER_IP:5000/api/price/esp32";
 
+// MQTT (HiveMQ Cloud)
+const char* MQTT_SERVER = "1e1a4e5c581e4bc3a697f8937d7fb9e4.s1.eu.hivemq.cloud";
+const int MQTT_PORT = 8883;
+const char* MQTT_USER = "omeravi";
+const char* MQTT_PASSWORD = "Omeromer1!";
+
+// Pins
+const int TRIG_A = 21, ECHO_A = 34;
+const int TRIG_B = 22, ECHO_B = 35;
+const int DHT_PIN_A = 27, DHT_PIN_B = 33;
+const int MAIN_BUTTON = 14;
+const int STATUS_LED = 2;
+#define NRF_CE 4
+#define NRF_CSN 5
+
+// Objects
+RF24 radio(NRF_CE, NRF_CSN);
+DHT dhtA(DHT_PIN_A, DHT22);
+DHT dhtB(DHT_PIN_B, DHT22);
 WiFiClientSecure espClient;
 PubSubClient mqttClient(espClient);
-
-// ---------------- PIN MAP ----------------
-const int TRIG_A = 21;
-const int ECHO_A = 34;   // input-only, via divider
-const int TRIG_B = 22;
-const int ECHO_B = 35;   // input-only, via divider
-
-#define NRF_CE  4
-#define NRF_CSN 5
-RF24 radio(NRF_CE, NRF_CSN);
-
-// Address must match Control Hub
 const byte PIPE_TX[6] = "SENS1";
 
-// --------- PAYLOAD (must match Control Hub) ---------
+// Telemetry struct (must match Control Hub)
 struct Telemetry {
-  uint32_t ms;       // sender millis
-  int16_t  distA_cm; // -1 if timeout
-  int16_t  distB_cm; // -1 if timeout
+  uint32_t ms;
+  int16_t distA_cm, distB_cm;
+  int16_t tempA_x10, tempB_x10;
+  uint8_t humidA, humidB;
+  uint8_t ecoMode;
+  uint8_t priceTier;
+  int8_t tempOffset;
 };
 
-// --------- SETTINGS ---------
-const unsigned long SEND_PERIOD_MS = 250;
-const unsigned long MQTT_PERIOD_MS = 5000;
-const unsigned long PULSE_TIMEOUT_US = 30000UL; // 30ms ~5m
+// Pricing data
+struct PricingData {
+  float price;
+  uint8_t tier;
+  String action;
+  int8_t tempOffset;
+  bool valid;
+  unsigned long lastUpdate;
+};
+
+// State
+bool ecoMode = true;
+bool lastButtonState = HIGH;
+unsigned long lastButtonPress = 0;
+PricingData currentPricing = {0, 2, "normal", 0, false, 0};
+unsigned long lastPriceFetch = 0, lastNrfSend = 0, lastMqttPublish = 0;
+float tempA = 0, tempB = 0, humidA = 0, humidB = 0;
+int16_t distA = -1, distB = -1;
+
+// Timing
+const unsigned long DEBOUNCE_MS = 200;
+const unsigned long PRICE_FETCH_INTERVAL = 300000;
+const unsigned long NRF_SEND_INTERVAL = 250;
+const unsigned long MQTT_PUBLISH_INTERVAL = 5000;
+const unsigned long PULSE_TIMEOUT_US = 30000;
 const int MIN_CM = 2, MAX_CM = 400;
 
-// simple smoothing (median of 3 samples)
-int16_t readDistanceCM(int trig, int echo) {
-  auto one = [&](void)->long {
-    // trigger 10us pulse
-    digitalWrite(trig, LOW); delayMicroseconds(2);
-    digitalWrite(trig, HIGH); delayMicroseconds(10);
-    digitalWrite(trig, LOW);
-    // measure echo high pulse
-    unsigned long us = pulseIn(echo, HIGH, PULSE_TIMEOUT_US);
-    if (us == 0) return -1;
-    long cm = us / 58; // µs -> cm
-    if (cm < MIN_CM || cm > MAX_CM) return -1;
-    return cm;
-  };
-  long a = one(); delay(5);
-  long b = one(); delay(5);
-  long c = one();
-
-  // median of (a,b,c), but treat -1 as "max" so valid readings win
-  long x[3] = { (a<0?10000:a), (b<0?10000:b), (c<0?10000:c) };
-  // sort 3
-  if (x[0] > x[1]) swap(x[0], x[1]);
-  if (x[1] > x[2]) swap(x[1], x[2]);
-  if (x[0] > x[1]) swap(x[0], x[1]);
-
-  long med = (x[1] >= 10000) ? -1 : x[1];
-  return (int16_t)med;
+int16_t readSingleDistance(int trig, int echo) {
+  digitalWrite(trig, LOW); delayMicroseconds(2);
+  digitalWrite(trig, HIGH); delayMicroseconds(10);
+  digitalWrite(trig, LOW);
+  unsigned long us = pulseIn(echo, HIGH, PULSE_TIMEOUT_US);
+  if (us == 0) return -1;
+  long cm = us / 58;
+  return (cm < MIN_CM || cm > MAX_CM) ? -1 : (int16_t)cm;
 }
 
-// MQTT RECONNECT FUNCTION
-void reconnectMQTT() {
-  if (!mqttClient.connected()) {
-    Serial.print("Connecting to MQTT...");
-    String clientId = "ESP32Sensor-" + String(random(0xffff), HEX);
-    
-    if (mqttClient.connect(clientId.c_str(), mqtt_user, mqtt_password)) {
-      Serial.println(" OK");
-    } else {
-      Serial.print(" FAIL (rc=");
-      Serial.print(mqttClient.state());
-      Serial.println(")");
+int16_t readDistanceCM(int trig, int echo) {
+  long readings[3];
+  for (int i = 0; i < 3; i++) {
+    long cm = readSingleDistance(trig, echo);
+    readings[i] = (cm < 0) ? 10000 : cm;
+    delay(5);
+  }
+  for (int i = 0; i < 2; i++)
+    for (int j = i + 1; j < 3; j++)
+      if (readings[i] > readings[j]) { long t = readings[i]; readings[i] = readings[j]; readings[j] = t; }
+  return (readings[1] >= 10000) ? -1 : (int16_t)readings[1];
+}
+
+void readTemperatures() {
+  float tA = dhtA.readTemperature(), hA = dhtA.readHumidity();
+  float tB = dhtB.readTemperature(), hB = dhtB.readHumidity();
+  if (!isnan(tA)) tempA = tA;
+  if (!isnan(hA)) humidA = hA;
+  if (!isnan(tB)) tempB = tB;
+  if (!isnan(hB)) humidB = hB;
+}
+
+void checkMainButton() {
+  bool current = digitalRead(MAIN_BUTTON);
+  if (current == LOW && lastButtonState == HIGH && millis() - lastButtonPress > DEBOUNCE_MS) {
+    ecoMode = !ecoMode;
+    lastButtonPress = millis();
+    Serial.printf("Mode: %s\n", ecoMode ? "ECO" : "MANUAL");
+    for (int i = 0; i < 3; i++) { digitalWrite(STATUS_LED, HIGH); delay(100); digitalWrite(STATUS_LED, LOW); delay(100); }
+  }
+  lastButtonState = current;
+}
+
+uint8_t tierStringToNum(const String& tier) {
+  if (tier == "very_low") return 0;
+  if (tier == "low") return 1;
+  if (tier == "normal") return 2;
+  if (tier == "high") return 3;
+  if (tier == "very_high") return 4;
+  if (tier == "critical") return 5;
+  return 2;
+}
+
+void fetchComedPricing() {
+  if (WiFi.status() != WL_CONNECTED) return;
+  HTTPClient http;
+  http.begin(PRICING_API_URL);
+  http.setTimeout(10000);
+  int httpCode = http.GET();
+  if (httpCode == HTTP_CODE_OK) {
+    StaticJsonDocument<256> doc;
+    if (!deserializeJson(doc, http.getString())) {
+      currentPricing.price = doc["p"].as<float>();
+      currentPricing.tier = tierStringToNum(doc["t"].as<String>());
+      currentPricing.action = doc["a"].as<String>();
+      currentPricing.tempOffset = doc["o"].as<int8_t>();
+      currentPricing.valid = (doc["s"].as<String>() == "active");
+      currentPricing.lastUpdate = millis();
+      Serial.printf("Price: %.2f¢, Tier: %d\n", currentPricing.price, currentPricing.tier);
     }
   }
+  http.end();
 }
 
-// PUBLISH TO MQTT FOR DASHBOARD
-void publishToMQTT() {
-  // Read current distances
-  int16_t distA = readDistanceCM(TRIG_A, ECHO_A);
-  int16_t distB = readDistanceCM(TRIG_B, ECHO_B);
-  
-  // Determine if room is occupied (distance < 100cm = someone present)
-  bool occupied = (distA > 0 && distA < 100) || (distB > 0 && distB < 100);
-  
-  // Simulate missing sensors (temporary until you add real ones)
-  float tempC = 24.0;
-  float humidity = 60.0;
-  int pir = occupied ? 1 : 0;
-  
-  // Estimate power: occupied = ~150W (fan running), empty = ~50W (baseline)
-  float amps = occupied ? 1.25 : 0.42;
-  
-  // Build JSON payload
-  String payload = "{";
-  payload += "\"ts\":" + String(millis()) + ",";
-  payload += "\"tC\":" + String(tempC, 1) + ",";
-  payload += "\"rh\":" + String(humidity, 1) + ",";
-  payload += "\"pir\":" + String(pir) + ",";
-  payload += "\"voltage\":120,";
-  payload += "\"amps\":" + String(amps, 2);
-  payload += "}";
-  
-  // Publish
-  bool ok = mqttClient.publish("sensors/room1/telemetry", payload.c_str());
-  
-  Serial.print("MQTT  ");
-  Serial.print(occupied ? "👤" : "🚫");
-  Serial.print("  ");
-  Serial.print((int)(amps * 120));
-  Serial.print("W  pub=");
-  Serial.println(ok ? "OK" : "FAIL");
+void sendTelemetryNRF() {
+  Telemetry t = {
+    millis(), distA, distB,
+    (int16_t)(tempA * 10), (int16_t)(tempB * 10),
+    (uint8_t)constrain(humidA, 0, 100), (uint8_t)constrain(humidB, 0, 100),
+    ecoMode ? (uint8_t)1 : (uint8_t)0, currentPricing.tier, currentPricing.tempOffset
+  };
+  bool ok = radio.write(&t, sizeof(t));
+  Serial.printf("NRF: A=%d B=%d eco=%d tier=%d -> %s\n", distA, distB, ecoMode, currentPricing.tier, ok ? "OK" : "FAIL");
 }
 
+void reconnectMQTT() {
+  if (mqttClient.connected()) return;
+  String clientId = "SensorHub-" + String(random(0xffff), HEX);
+  if (mqttClient.connect(clientId.c_str(), MQTT_USER, MQTT_PASSWORD))
+    Serial.println("MQTT connected");
+}
 
-unsigned long lastSend = 0;
+void publishMQTT() {
+  if (!mqttClient.connected()) reconnectMQTT();
+  if (!mqttClient.connected()) return;
+  
+  bool occA = (distA > 0 && distA < 150), occB = (distB > 0 && distB < 150);
+  float amps = 0.42 + (occA ? 0.5 : 0) + (occB ? 0.5 : 0);
+  
+  StaticJsonDocument<512> doc;
+  doc["ts"] = millis();
+  doc["tC_A"] = tempA; doc["tC_B"] = tempB;
+  doc["rh_A"] = humidA; doc["rh_B"] = humidB;
+  doc["dist_A"] = distA; doc["dist_B"] = distB;
+  doc["occ_A"] = occA; doc["occ_B"] = occB;
+  doc["voltage"] = 120; doc["amps"] = amps;
+  doc["eco_mode"] = ecoMode;
+  doc["price_cents"] = currentPricing.price;
+  doc["price_tier"] = currentPricing.tier;
+  doc["price_action"] = currentPricing.action;
+  
+  String payload;
+  serializeJson(doc, payload);
+  mqttClient.publish("sensors/room1/telemetry", payload.c_str());
+}
+
+void connectWiFi() {
+  Serial.print("WiFi");
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  int attempts = 0;
+  while (WiFi.status() != WL_CONNECTED && attempts++ < 30) { delay(500); Serial.print("."); }
+  Serial.println(WiFi.status() == WL_CONNECTED ? " OK" : " FAILED");
+  if (WiFi.status() == WL_CONNECTED) Serial.println(WiFi.localIP());
+}
 
 void setup() {
   Serial.begin(115200);
-
-  pinMode(TRIG_A, OUTPUT); digitalWrite(TRIG_A, LOW);
-  pinMode(ECHO_A, INPUT);   // GPIO34 is input-only (perfect)
-  pinMode(TRIG_B, OUTPUT); digitalWrite(TRIG_B, LOW);
-  pinMode(ECHO_B, INPUT);   // GPIO35 is input-only
-
-  if (!radio.begin()) {
-    Serial.println("NRF init failed (power/CE/CSN?).");
+  pinMode(TRIG_A, OUTPUT); pinMode(ECHO_A, INPUT);
+  pinMode(TRIG_B, OUTPUT); pinMode(ECHO_B, INPUT);
+  pinMode(MAIN_BUTTON, INPUT_PULLUP);
+  pinMode(STATUS_LED, OUTPUT);
+  digitalWrite(TRIG_A, LOW); digitalWrite(TRIG_B, LOW);
+  
+  dhtA.begin(); dhtB.begin();
+  
+  if (radio.begin()) {
+    radio.setPALevel(RF24_PA_LOW);
+    radio.setDataRate(RF24_1MBPS);
+    radio.setChannel(108);
+    radio.openWritingPipe(PIPE_TX);
+    radio.stopListening();
   }
-  radio.setPALevel(RF24_PA_LOW);     // raise to RF24_PA_HIGH if needed
-  radio.setDataRate(RF24_1MBPS);
-  radio.setChannel(108);
-  radio.openWritingPipe(PIPE_TX);
-  radio.stopListening();             // TX mode
-
-  Serial.println("Sensor Hub ready: sending to 'SENS1'");
-
-  // connect to WiFi
-  Serial.print("Connecting to WiFi");
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
-  Serial.println(" OK");
-  Serial.print("IP: ");
-  Serial.println(WiFi.localIP());
-
-  // setup MQTT
-  espClient.setInsecure(); // For testing
-  mqttClient.setServer(mqtt_server, mqtt_port);
-
+  
+  connectWiFi();
+  espClient.setInsecure();
+  mqttClient.setServer(MQTT_SERVER, MQTT_PORT);
   reconnectMQTT();
+  fetchComedPricing();
+  
+  Serial.println("Sensor Hub Ready - Button GPIO14 toggles ECO/MANUAL");
 }
 
 void loop() {
-  if (!mqttClient.connected()) {
-    reconnectMQTT();
-  }
-  mqttClient.loop();
-
-  if (millis() - lastSend >= SEND_PERIOD_MS) {
-    lastSend = millis();
-
-    Telemetry t;
-    t.ms = millis();
-    t.distA_cm = readDistanceCM(TRIG_A, ECHO_A);
-    t.distB_cm = readDistanceCM(TRIG_B, ECHO_B);
-
-    bool ok = radio.write(&t, sizeof(t));
-
-    // Debug
-    Serial.print("TX  A:"); Serial.print(t.distA_cm);
-    Serial.print("cm  B:"); Serial.print(t.distB_cm);
-    Serial.print("  send="); Serial.println(ok ? "OK" : "FAIL");
-  }
-
-  if (millis() - lastMqtt >= MQTT_PERIOD_MS) {
-    lastMqtt = millis();
-    publishToMQTT();
-  }
+  unsigned long now = millis();
+  if (WiFi.status() != WL_CONNECTED) connectWiFi();
+  if (mqttClient.connected()) mqttClient.loop();
+  
+  checkMainButton();
+  distA = readDistanceCM(TRIG_A, ECHO_A);
+  distB = readDistanceCM(TRIG_B, ECHO_B);
+  readTemperatures();
+  
+  if (now - lastPriceFetch >= PRICE_FETCH_INTERVAL || lastPriceFetch == 0) { fetchComedPricing(); lastPriceFetch = now; }
+  if (now - lastNrfSend >= NRF_SEND_INTERVAL) { sendTelemetryNRF(); lastNrfSend = now; }
+  if (now - lastMqttPublish >= MQTT_PUBLISH_INTERVAL) { publishMQTT(); lastMqttPublish = now; }
+  
+  static unsigned long lastBlink = 0;
+  if (now - lastBlink >= 1000) { digitalWrite(STATUS_LED, !digitalRead(STATUS_LED)); lastBlink = now; }
+  delay(10);
 }

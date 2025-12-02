@@ -1,78 +1,83 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Smart Energy Dashboard - Room 1</title>
-    <link rel="stylesheet" href="dashboard.css">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Smart Energy Dashboard</title>
+  <link rel="stylesheet" href="dashboard.css">
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
+  <script src="dashboard.js" defer></script>
+  <style>
+    .mode-badge { display: inline-block; padding: 8px 16px; border-radius: 20px; font-weight: bold; font-size: 14px; margin-left: 15px; }
+    .mode-badge.eco { background: linear-gradient(135deg, #51cf66, #40c057); color: #000; }
+    .mode-badge.manual { background: linear-gradient(135deg, #ffd43b, #fab005); color: #000; }
+    .header-row { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; margin-bottom: 20px; }
+    .room-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px; }
+    .room-card { background: #0f3460; padding: 15px; border-radius: 8px; border-left: 4px solid #00d9ff; }
+    .room-card.room-a { border-left-color: #e94560; }
+    .room-card.room-b { border-left-color: #ff922b; }
+    .room-card strong { display: block; margin-bottom: 10px; font-size: 1.1em; }
+    .alert-item { background: #e94560; padding: 10px; border-radius: 4px; margin: 5px 0; }
+    .controls-note { font-size: 12px; color: #888; margin-top: 10px; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="override-banner" id="overrideBanner">⚠️ MANUAL OVERRIDE ACTIVE ⚠️</div>
 
-    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js" defer></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
+    <div class="header-row">
+      <h1>Smart Energy Dashboard</h1>
+      <span id="modeStatus" class="mode-badge eco">ECO MODE</span>
+    </div>
 
-    
-    <script src="dashboard.js" defer></script>
-  </head>
+    <div class="room-grid">
+      <div class="room-card room-a" id="roomAInfo"><strong>Room A</strong>Temp: --°C<br>Humidity: --%<br>Status: ⚪ Unknown</div>
+      <div class="room-card room-b" id="roomBInfo"><strong>Room B</strong>Temp: --°C<br>Humidity: --%<br>Status: ⚪ Unknown</div>
+    </div>
 
-  <body>
-    <div class="container">
-      <div class="override-banner" id="overrideBanner">⚠️ MANUAL OVERRIDE ACTIVE - ALL AUTOMATION DISABLED ⚠️</div>
+    <div class="grid">
+      <div class="card"><h3>Power Consumption</h3><canvas id="powerChart"></canvas></div>
+      <div class="card"><h3>Temperature & Humidity</h3><canvas id="tempChart"></canvas></div>
+      <div class="card"><h3>Electricity Pricing</h3><canvas id="pricingChart"></canvas></div>
+    </div>
 
-      <h1>Smart Energy Dashboard - Room 1</h1>
-
-      <div class="grid">
-        <div class="card">
-          <h3>Power Consumption</h3>
-          <canvas id="powerChart"></canvas>
+    <div class="grid">
+      <div class="card">
+        <h3>System Status</h3>
+        <div class="status">
+          <div class="status-item" id="statusPIR">Rooms: Unknown</div>
+          <div class="status-item" id="statusFan">Fan: OFF</div>
+          <div class="status-item" id="statusLamp">Lamp: OFF</div>
+          <div class="status-item" id="statusBroker">Broker: Disconnected</div>
         </div>
-
-        <div class="card">
-          <h3>Temperature & Humidity</h3>
-          <canvas id="tempChart"></canvas>
-        </div>
-
-        <div class="card">
-          <h3>Electricity Pricing History</h3>
-          <canvas id="pricingChart"></canvas>
-        </div>
-      </div>
-      
-      <div class="grid">
-        <div class="card">
-          <h3>Status</h3>
-          <div class="status">
-            <div class="status-item" id="statusPIR">PIR: Inactive</div>
-            <div class="status-item" id="statusFan">Fan: OFF</div>
-            <div class="status-item" id="statusLamp">Lamp: OFF</div>
-            <div class="status-item" id="statusBroker">Broker: Disconnected</div>
-          </div>
-          <p style="margin-top: 15px; font-size: 24px;">Projected Cost: $<span id="projectedCost">0.00</span></p>
-        </div>
-
-        <div class="card">
-          <h3>Controls</h3>
-          <div>
-            <button class="btn-on"  onclick="sendCommand('fan','on')">Fan ON</button>
-            <button class="btn-off" onclick="sendCommand('fan','off')">Fan OFF</button>
-          </div>
-          <div>
-            <button class="btn-on"  onclick="sendCommand('lamp','on')">Lamp ON</button>
-            <button class="btn-off" onclick="sendCommand('lamp','off')">Lamp OFF</button>
-          </div>
-          <button class="btn-override" id="overrideBtn" onclick="toggleOverride()">🚨 EMERGENCY OVERRIDE</button>
-        </div>
+        <p style="margin-top: 15px; font-size: 24px;">Projected Cost: $<span id="projectedCost">0.00</span></p>
       </div>
 
       <div class="card">
-        <h3>Electricity Pricing</h3>
-        <div id="pricingInfo" class="pricing-info">
-          Loading pricing data...
+        <h3>Manual Controls</h3>
+        <div>
+          <button class="btn-on" onclick="sendCommand('fan','on')">Fan ON</button>
+          <button class="btn-off" onclick="sendCommand('fan','off')">Fan OFF</button>
         </div>
-      </div>
-
-      <div class="card">
-        <h3>Alerts</h3>
-        <div id="alerts" style="min-height: 50px;">No alerts</div>
+        <div>
+          <button class="btn-on" onclick="sendCommand('lamp','on')">Lamp ON</button>
+          <button class="btn-off" onclick="sendCommand('lamp','off')">Lamp OFF</button>
+        </div>
+        <button class="btn-override" id="overrideBtn" onclick="toggleOverride()">🚨 EMERGENCY OVERRIDE</button>
+        <div class="controls-note">Manual controls only work in MANUAL mode. Use GPIO14 button on Sensor Hub to switch modes.</div>
       </div>
     </div>
-  </body>
+
+    <div class="card">
+      <h3>Electricity Pricing (ComEd Real-Time)</h3>
+      <div id="pricingInfo" class="pricing-info">Loading pricing data...</div>
+    </div>
+
+    <div class="card">
+      <h3>Alerts</h3>
+      <div id="alerts" style="min-height: 50px;">No alerts</div>
+    </div>
+  </div>
+</body>
 </html>

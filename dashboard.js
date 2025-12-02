@@ -1,25 +1,21 @@
-
 const BROKER_URL = 'wss://1e1a4e5c581e4bc3a697f8937d7fb9e4.s1.eu.hivemq.cloud:8884/mqtt';
-const PRICING_API_URL = 'http://localhost:5000'; // comed api url
-
+const PRICING_API_URL = 'http://localhost:5000';
 
 const mqttOptions = {
-  username: 'omeravi',          
-  password: 'Omeromer1!', 
+  username: 'omeravi',
+  password: 'Omeromer1!',
   keepalive: 60,
   reconnectPeriod: 2000,
   connectTimeout: 10000
 };
 
-
 const TOPICS = {
   telemetry: 'sensors/room1/telemetry',
-  control:   'control/room1/cmd',
-  alerts:    'alerts/room1/anomaly',
-  stateFan:  'control/room1/state/fan',
+  control: 'control/room1/cmd',
+  alerts: 'alerts/room1/anomaly',
+  stateFan: 'control/room1/state/fan',
   stateLamp: 'control/room1/state/lamp'
 };
-
 
 const RATES = [
   { block: 250, rate: 0.110 },
@@ -27,153 +23,101 @@ const RATES = [
   { block: Infinity, rate: 0.185 }
 ];
 
+const TIER_INFO = {
+  0: { name: 'VERY LOW', color: '#00d9ff', class: 'tier-very_low' },
+  1: { name: 'LOW', color: '#51cf66', class: 'tier-low' },
+  2: { name: 'NORMAL', color: '#ffd43b', class: 'tier-normal' },
+  3: { name: 'HIGH', color: '#ff922b', class: 'tier-high' },
+  4: { name: 'VERY HIGH', color: '#ff6b6b', class: 'tier-very_high' },
+  5: { name: 'CRITICAL', color: '#e94560', class: 'tier-critical' }
+};
 
 let mqttClient = null;
 let overrideActive = false;
 let accumulatedWh = 0;
 let lastSampleTsMs = null;
-
-
-const deviceStates = { fan: false, lamp: false, pir: false };
-
-// pricing data variables
 let currentPricingData = null;
+let currentEcoMode = true;
 let pricingUpdateInterval = null;
 
+const deviceStates = { fan: false, lamp: false, pir: false };
+let roomData = {
+  A: { temp: 0, humidity: 0, occupied: false, distance: -1 },
+  B: { temp: 0, humidity: 0, occupied: false, distance: -1 }
+};
+
 const powerData = { labels: [], datasets: [{ label: 'Power (W)', data: [], borderColor: '#00d9ff', tension: 0.35, pointRadius: 0 }] };
-const tempData  = {
+const tempData = {
   labels: [],
   datasets: [
-    { label: 'Temp (°C)',    data: [], borderColor: '#e94560', tension: 0.35, pointRadius: 0, yAxisID: 'y'  },
-    { label: 'Humidity (%)', data: [], borderColor: '#00d9ff', tension: 0.35, pointRadius: 0, yAxisID: 'y1' }
+    { label: 'Room A (°C)', data: [], borderColor: '#e94560', tension: 0.35, pointRadius: 0, yAxisID: 'y' },
+    { label: 'Room B (°C)', data: [], borderColor: '#ff922b', tension: 0.35, pointRadius: 0, yAxisID: 'y' },
+    { label: 'Humidity A (%)', data: [], borderColor: '#00d9ff', tension: 0.35, pointRadius: 0, yAxisID: 'y1' },
+    { label: 'Humidity B (%)', data: [], borderColor: '#3b82f6', tension: 0.35, pointRadius: 0, yAxisID: 'y1' }
   ]
 };
-
-const powerChart = new Chart(document.getElementById('powerChart'), {
-  type: 'line',
-  data: powerData,
-  options: {
-    responsive: true,
-    maintainAspectRatio: true,
-    animation: false,
-    scales: { y: { beginAtZero: true, title: { display: true, text: 'Power (W)' } } },
-    plugins: { legend: { display: true } }
-  }
-});
-
-const tempChart = new Chart(document.getElementById('tempChart'), {
-  type: 'line',
-  data: tempData,
-  options: {
-    responsive: true,
-    maintainAspectRatio: true,
-    animation: false,
-    scales: {
-      y:  { position: 'left',  title: { display: true, text: 'Temp (°C)' } },
-      y1: { position: 'right', title: { display: true, text: 'Humidity (%)' }, grid: { drawOnChartArea: false } }
-    },
-    plugins: { legend: { display: true } }
-  }
-});
-
-const pricingData = { 
-  labels: [], 
-  datasets: [
-    { 
-      label: 'Price (¢/kWh)', 
-      data: [], 
-      borderColor: '#ffd43b',
-      backgroundColor: 'rgba(255, 212, 59, 0.1)',
-      tension: 0.35, 
-      pointRadius: 2,
-      fill: true
-    }
-  ] 
+const pricingData = {
+  labels: [],
+  datasets: [{ label: 'Price (¢/kWh)', data: [], borderColor: '#ffd43b', backgroundColor: 'rgba(255, 212, 59, 0.1)', tension: 0.35, pointRadius: 2, fill: true }]
 };
 
-const pricingChart = new Chart(document.getElementById('pricingChart'), {
-  type: 'line',
-  data: pricingData,
-  options: {
-    responsive: true,
-    maintainAspectRatio: true,
-    animation: false,
-    scales: { 
-      y: { 
-        beginAtZero: true, 
-        title: { display: true, text: 'Price (¢/kWh)' },
-        ticks: {
-          callback: function(value) {
-            return value.toFixed(2) + '¢';
-          }
-        }
-      },
-      x: {
-        title: { display: true, text: 'Time' }
-      }
-    },
-    plugins: { 
-      legend: { display: true },
-      tooltip: {
-        callbacks: {
-          label: function(context) {
-            return 'Price: ' + context.parsed.y.toFixed(2) + '¢/kWh';
-          }
-        }
-      }
-    }
-  }
-});
+let powerChart, tempChart, pricingChart;
+
+function initCharts() {
+  const opts = { responsive: true, maintainAspectRatio: true, animation: false };
+  
+  powerChart = new Chart(document.getElementById('powerChart'), {
+    type: 'line', data: powerData,
+    options: { ...opts, scales: { y: { beginAtZero: true, title: { display: true, text: 'Power (W)' } } } }
+  });
+  
+  tempChart = new Chart(document.getElementById('tempChart'), {
+    type: 'line', data: tempData,
+    options: { ...opts, scales: {
+      y: { position: 'left', title: { display: true, text: 'Temp (°C)' } },
+      y1: { position: 'right', title: { display: true, text: 'Humidity (%)' }, grid: { drawOnChartArea: false } }
+    }}
+  });
+  
+  pricingChart = new Chart(document.getElementById('pricingChart'), {
+    type: 'line', data: pricingData,
+    options: { ...opts, scales: {
+      y: { beginAtZero: true, title: { display: true, text: 'Price (¢/kWh)' }, ticks: { callback: v => v.toFixed(2) + '¢' } },
+      x: { title: { display: true, text: 'Time' } }
+    }}
+  });
+}
 
 function addDataPoint(chart, data, label, value) {
   data.labels.push(label);
-  if (Array.isArray(value)) {
-    value.forEach((v, i) => data.datasets[i].data.push(v));
-  } else {
-    data.datasets[0].data.push(value);
-  }
-  const MAX = 60;
-  if (data.labels.length > MAX) {
-    data.labels.shift();
-    data.datasets.forEach(ds => ds.data.shift());
-  }
+  if (Array.isArray(value)) value.forEach((v, i) => data.datasets[i].data.push(v));
+  else data.datasets[0].data.push(value);
+  if (data.labels.length > 60) { data.labels.shift(); data.datasets.forEach(ds => ds.data.shift()); }
   chart.update('none');
 }
 
-
 function connectMQTT() {
   mqttClient = mqtt.connect(BROKER_URL, mqttOptions);
-
+  
   mqttClient.on('connect', () => {
     setBrokerStatus(true);
-    console.log('✅ Connected to HiveMQ Cloud');
-
-    fetchPricingData(); // immediate fetch
-    fetchPriceHistory(); // load last 6 hours of pricing history
-    pricingUpdateInterval = setInterval(fetchPricingData, 300000); // every 5 minutes
-
-    
-
-    mqttClient.subscribe([
-      TOPICS.telemetry,
-      TOPICS.alerts,
-      TOPICS.stateFan,
-      TOPICS.stateLamp
-    ], (err) => { if (err) console.error('Subscribe error', err); });
+    fetchPricingData();
+    fetchPriceHistory();
+    pricingUpdateInterval = setInterval(fetchPricingData, 300000);
+    mqttClient.subscribe([TOPICS.telemetry, TOPICS.alerts, TOPICS.stateFan, TOPICS.stateLamp]);
   });
-
+  
   mqttClient.on('reconnect', () => setBrokerStatus(false));
   mqttClient.on('close', () => setBrokerStatus(false));
-  mqttClient.on('error', (err) => { console.error('MQTT error:', err); setBrokerStatus(false); });
-
+  mqttClient.on('error', () => setBrokerStatus(false));
+  
   mqttClient.on('message', (topic, payload) => {
     let data;
-    try { data = JSON.parse(payload.toString()); }
-    catch { return; } // ignore invalid JSON
-    if      (topic === TOPICS.telemetry)  handleTelemetry(data);
-    else if (topic === TOPICS.alerts)     handleAlert(data);
-    else if (topic === TOPICS.stateFan)   handleStateEcho('fan', data);
-    else if (topic === TOPICS.stateLamp)  handleStateEcho('lamp', data);
+    try { data = JSON.parse(payload.toString()); } catch { return; }
+    if (topic === TOPICS.telemetry) handleTelemetry(data);
+    else if (topic === TOPICS.alerts) handleAlert(data);
+    else if (topic === TOPICS.stateFan) handleStateEcho('fan', data);
+    else if (topic === TOPICS.stateLamp) handleStateEcho('lamp', data);
   });
 }
 
@@ -183,53 +127,84 @@ function setBrokerStatus(connected) {
   el.classList.toggle('active', connected);
 }
 
-
 function handleTelemetry(d) {
-  const tsMs = coerceTsMs(d.ts);
-  const timeLabel = new Date(currentPricingData.millisUTC).toLocaleTimeString();
-
-  const voltage = isFiniteNumber(d.voltage) ? d.voltage : 120;
-  const amps    = isFiniteNumber(d.amps) ? d.amps : 0;
-  const powerW  = +(voltage * amps).toFixed(1);
-
+  const timeLabel = new Date().toLocaleTimeString();
+  const tempA = d.tC_A ?? d.tC ?? 0, tempB = d.tC_B ?? d.tC ?? 0;
+  const humidA = d.rh_A ?? d.rh ?? 0, humidB = d.rh_B ?? d.rh ?? 0;
+  const occA = d.occ_A ?? (d.pir === 1), occB = d.occ_B ?? false;
+  
+  roomData.A = { temp: tempA, humidity: humidA, occupied: occA, distance: d.dist_A ?? -1 };
+  roomData.B = { temp: tempB, humidity: humidB, occupied: occB, distance: d.dist_B ?? -1 };
+  currentEcoMode = d.eco_mode === 1;
+  updateModeDisplay();
+  if (d.price_cents !== undefined) updatePricingFromTelemetry(d);
+  
+  const voltage = d.voltage ?? 120, amps = d.amps ?? 0;
+  const powerW = +(voltage * amps).toFixed(1);
   addDataPoint(powerChart, powerData, timeLabel, powerW);
-
-  const t = isFiniteNumber(d.tC) ? +d.tC.toFixed(1) : null;
-  const h = isFiniteNumber(d.rh) ? +d.rh.toFixed(1) : null;
-  addDataPoint(tempChart, tempData, timeLabel, [t, h]);
-
-  deviceStates.pir = d.pir === 1 || d.pir === true;
-  setStatus('PIR', deviceStates.pir, v => v ? 'PIR: Active' : 'PIR: Inactive');
-
-  if (lastSampleTsMs != null && tsMs > lastSampleTsMs) {
-    const dtHours = (tsMs - lastSampleTsMs) / 3_600_000;
-    accumulatedWh += powerW * dtHours;
-  }
+  addDataPoint(tempChart, tempData, timeLabel, [tempA, tempB, humidA, humidB]);
+  
+  deviceStates.pir = occA || occB;
+  updateOccupancyStatus();
+  
+  const tsMs = d.ts ?? Date.now();
+  if (lastSampleTsMs != null && tsMs > lastSampleTsMs) accumulatedWh += powerW * ((tsMs - lastSampleTsMs) / 3600000);
   lastSampleTsMs = tsMs;
-
-  const kWh = accumulatedWh / 1000;
-  document.getElementById('projectedCost').textContent = costForKWh(kWh).toFixed(2);
+  updateProjectedCost();
+  updateRoomCards();
 }
 
+function updateModeDisplay() {
+  const el = document.getElementById('modeStatus');
+  if (el) {
+    el.textContent = currentEcoMode ? 'ECO MODE' : 'MANUAL MODE';
+    el.className = currentEcoMode ? 'mode-badge eco' : 'mode-badge manual';
+  }
+}
+
+function updateOccupancyStatus() {
+  const el = document.getElementById('statusPIR');
+  const occA = roomData.A.occupied, occB = roomData.B.occupied;
+  let status = 'Rooms: ';
+  if (occA && occB) status += 'A & B Occupied';
+  else if (occA) status += 'A Occupied';
+  else if (occB) status += 'B Occupied';
+  else status += 'All Empty';
+  el.textContent = status;
+  el.classList.toggle('active', occA || occB);
+}
+
+function updateRoomCards() {
+  const roomAEl = document.getElementById('roomAInfo');
+  const roomBEl = document.getElementById('roomBInfo');
+  if (roomAEl) roomAEl.innerHTML = `<strong>Room A</strong><br>Temp: ${roomData.A.temp.toFixed(1)}°C<br>Humidity: ${roomData.A.humidity.toFixed(0)}%<br>Status: ${roomData.A.occupied ? '🟢 Occupied' : '⚪ Empty'}`;
+  if (roomBEl) roomBEl.innerHTML = `<strong>Room B</strong><br>Temp: ${roomData.B.temp.toFixed(1)}°C<br>Humidity: ${roomData.B.humidity.toFixed(0)}%<br>Status: ${roomData.B.occupied ? '🟢 Occupied' : '⚪ Empty'}`;
+}
+
+function updatePricingFromTelemetry(d) {
+  const tier = d.price_tier ?? 2;
+  const tierInfo = TIER_INFO[tier];
+  const pricingDiv = document.getElementById('pricingInfo');
+  if (pricingDiv) {
+    pricingDiv.innerHTML = `<strong>Price:</strong> ${(d.price_cents ?? 0).toFixed(2)}¢/kWh<br><strong>Tier:</strong> <span style="color: ${tierInfo.color}">${tierInfo.name}</span><br><strong>Action:</strong> ${d.price_action ?? 'normal'}<br><strong>Mode:</strong> ${currentEcoMode ? '🌿 ECO' : '🔧 MANUAL'}`;
+    pricingDiv.className = 'pricing-info ' + tierInfo.class;
+  }
+}
 
 function handleAlert(d) {
-  const msg = d.message || 'Anomaly detected';
   const div = document.getElementById('alerts');
-  div.innerHTML = `<div>⚠️ ${escapeHtml(msg)}</div>` + div.innerHTML;
+  div.innerHTML = `<div class="alert-item">⚠️ ${d.message || 'Anomaly detected'}</div>` + div.innerHTML;
 }
 
-
 function publishCmd(device, action, reason = 'manual') {
-  if (!mqttClient || !mqttClient.connected) { alert('Broker not connected yet.'); return; }
+  if (!mqttClient || !mqttClient.connected) { alert('Broker not connected'); return; }
   mqttClient.publish(TOPICS.control, JSON.stringify({ device, action, reason }));
 }
 
 function sendCommand(device, action) {
-  if (overrideActive) {
-    alert('Manual override is active. Deactivate to control devices.');
-    return;
-  }
-  publishCmd(device, action, 'manual');
+  if (overrideActive) { alert('Override active'); return; }
+  if (currentEcoMode) { alert('System in ECO mode - devices controlled automatically'); return; }
+  publishCmd(device, action, 'dashboard-manual');
   deviceStates[device] = action === 'on';
   updateDeviceStatus(device);
 }
@@ -238,7 +213,6 @@ function toggleOverride() {
   overrideActive = !overrideActive;
   const btn = document.getElementById('overrideBtn');
   const banner = document.getElementById('overrideBanner');
-
   if (overrideActive) {
     publishCmd('fan', 'off', 'override');
     publishCmd('lamp', 'off', 'override');
@@ -260,98 +234,49 @@ function handleStateEcho(device, payload) {
 }
 
 function updateDeviceStatus(device) {
-  const id = `status${device.charAt(0).toUpperCase()}${device.slice(1)}`;
-  const el = document.getElementById(id);
+  const el = document.getElementById(`status${device.charAt(0).toUpperCase()}${device.slice(1)}`);
   const on = !!deviceStates[device];
-  el.textContent = `${capitalize(device)}: ${on ? 'ON' : 'OFF'}`;
+  el.textContent = `${device.charAt(0).toUpperCase()}${device.slice(1)}: ${on ? 'ON' : 'OFF'}`;
   el.classList.toggle('active', on);
 }
 
-
-function costForKWh(kWhTotal) {
-  let remaining = kWhTotal;
-  let cost = 0;
-  for (const tier of RATES) {
-    const block = Math.min(remaining, tier.block);
-    cost += block * tier.rate;
-    remaining -= block;
-    if (remaining <= 0) break;
+function updateProjectedCost() {
+  const kWh = accumulatedWh / 1000;
+  let cost;
+  if (currentPricingData && currentPricingData.price_cents_per_kwh) {
+    cost = kWh * (currentPricingData.price_cents_per_kwh / 100);
+  } else {
+    let remaining = kWh; cost = 0;
+    for (const tier of RATES) { const block = Math.min(remaining, tier.block); cost += block * tier.rate; remaining -= block; if (remaining <= 0) break; }
   }
-  return cost;
+  document.getElementById('projectedCost').textContent = cost.toFixed(2);
 }
 
-function setStatus(name, active, textFn) {
-  const el = document.getElementById(`status${name}`);
-  el.textContent = typeof textFn === 'function'
-    ? textFn(active)
-    : `${name}: ${active ? 'Active' : 'Inactive'}`;
-  el.classList.toggle('active', !!active);
-}
-
-function isFiniteNumber(x){ return Number.isFinite(+x); }
-
-function coerceTsMs(ts) {
-  const n = Number(ts);
-  if (!Number.isFinite(n)) return Date.now();
-  if (n > 1e12) return n;        
-  if (n > 1e9)  return n * 1000; 
-  return Date.now();
-}
-
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
-}
-
-function capitalize(s){ return s ? s[0].toUpperCase()+s.slice(1) : s; }
-
-// fetch pricing data
 async function fetchPricingData() {
   try {
     const response = await fetch(`${PRICING_API_URL}/api/price/current`);
     if (response.ok) {
       currentPricingData = await response.json();
       updatePricingDisplay();
-      updateCostCalculation();
-    } else {
-      console.error('Failed to fetch pricing data:', response.status);
+      updateProjectedCost();
     }
-  } catch (error) {
-    console.error('Error fetching pricing data:', error);
-  }
+  } catch (error) { console.error('Pricing fetch error:', error); }
 }
 
 function updatePricingDisplay() {
   if (!currentPricingData) return;
-  
   const price = currentPricingData.price_cents_per_kwh;
   const tier = currentPricingData.tier;
-  const recommendation = currentPricingData.recommendation;
+  const rec = currentPricingData.recommendation;
+  const tierNum = { 'very_low': 0, 'low': 1, 'normal': 2, 'high': 3, 'very_high': 4, 'critical': 5 }[tier] ?? 2;
+  const tierInfo = TIER_INFO[tierNum];
   
   const pricingDiv = document.getElementById('pricingInfo');
   if (pricingDiv) {
-    pricingDiv.innerHTML = `
-      <strong>Current Price:</strong> ${price.toFixed(2)}¢/kWh<br>
-      <strong>Tier:</strong> ${tier.replace('_', ' ').toUpperCase()}<br>
-      <strong>Action:</strong> ${recommendation.action}<br>
-      <small>${recommendation.message}</small>
-    `;
-    
-    pricingDiv.className = 'pricing-info tier-' + tier;
+    pricingDiv.innerHTML = `<strong>Price:</strong> ${price.toFixed(2)}¢/kWh<br><strong>Tier:</strong> <span style="color: ${tierInfo.color}">${tierInfo.name}</span><br><strong>Action:</strong> ${rec.action}<br><strong>Suggestion:</strong> ${rec.message}<br><strong>Mode:</strong> ${currentEcoMode ? '🌿 ECO' : '🔧 MANUAL'}`;
+    pricingDiv.className = 'pricing-info ' + tierInfo.class;
   }
-
-  const timeLabel = new Date(currentPricingData.timestamp).toLocaleTimeString();
-  addDataPoint(pricingChart, pricingData, timeLabel, price);
-}
-
-// update current cost calculation to use comed pricing data
-function updateCostCalculation() {
-  if (!currentPricingData) return;
-  
-  const kWh = accumulatedWh / 1000;
-  const pricePerKwh = currentPricingData.price_cents_per_kwh / 100;
-  const cost = kWh * pricePerKwh;
-  
-  document.getElementById('projectedCost').textContent = cost.toFixed(2);
+  addDataPoint(pricingChart, pricingData, new Date(currentPricingData.timestamp).toLocaleTimeString(), price);
 }
 
 async function fetchPriceHistory() {
@@ -359,28 +284,20 @@ async function fetchPriceHistory() {
     const response = await fetch(`${PRICING_API_URL}/api/price/history?hours=6`);
     if (response.ok) {
       const data = await response.json();
-      
-      // Clear existing data
-      pricingData.labels = [];
-      pricingData.datasets[0].data = [];
-      
-      // Add historical data (reverse to show oldest to newest)
-      data.data.reverse().forEach(record => {
-        const time = new Date(record.millisUTC).toLocaleTimeString();
-        pricingData.labels.push(time);
-        pricingData.datasets[0].data.push(record.price_cents_per_kwh);
+      pricingData.labels = []; pricingData.datasets[0].data = [];
+      data.data.reverse().forEach(r => {
+        pricingData.labels.push(new Date(r.millisUTC).toLocaleTimeString());
+        pricingData.datasets[0].data.push(r.price_cents_per_kwh);
       });
-      
       pricingChart.update('none');
-      console.log(`Loaded ${data.count} price records`);
     }
-  } catch (error) {
-    console.error('Error fetching price history:', error);
-  }
+  } catch (error) { console.error('Price history error:', error); }
 }
 
-connectMQTT();
-
+document.addEventListener('DOMContentLoaded', () => { initCharts(); connectMQTT(); });
 
 window.sendCommand = sendCommand;
 window.toggleOverride = toggleOverride;
+window.mqttClient = mqttClient;
+window.fetchPricingData = fetchPricingData;
+window.fetchPriceHistory = fetchPriceHistory;
