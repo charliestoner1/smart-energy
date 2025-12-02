@@ -1,78 +1,276 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
+<head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Smart Energy Dashboard - Room 1</title>
     <link rel="stylesheet" href="dashboard.css">
-
-    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js" defer></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
-
-    
-    <script src="dashboard.js" defer></script>
-  </head>
-
-  <body>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+    <!-- Added authentication check and logout button styles -->
+    <style>
+        .header-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .btn-logout {
+            padding: 10px 20px;
+            background: #e94560;
+            color: #fff;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+    </style>
+    <script>
+        // Check authentication
+        if (!sessionStorage.getItem('authenticated')) {
+            window.location.href = 'login.html';
+        }
+        
+        function logout() {
+            sessionStorage.removeItem('authenticated');
+            window.location.href = 'index.html';
+        }
+    </script>
+</head>
+<body>
     <div class="container">
-      <div class="override-banner" id="overrideBanner">⚠️ MANUAL OVERRIDE ACTIVE - ALL AUTOMATION DISABLED ⚠️</div>
-
-      <h1>Smart Energy Dashboard - Room 1</h1>
-
-      <div class="grid">
+        <div class="override-banner" id="overrideBanner">⚠️ MANUAL OVERRIDE ACTIVE - ALL AUTOMATION DISABLED ⚠️</div>
+        
+        <!-- Added header with logout button -->
+        <div class="header-bar">
+            <h1>Smart Energy Dashboard - Room 1</h1>
+            <button class="btn-logout" onclick="logout()">Logout</button>
+        </div>
+        
+        <div class="grid">
+            <div class="card">
+                <h3>Power Consumption</h3>
+                <canvas id="powerChart"></canvas>
+            </div>
+            
+            <div class="card">
+                <h3>Temperature & Humidity</h3>
+                <canvas id="tempChart"></canvas>
+            </div>
+        </div>
+        
+        <div class="grid">
+            <div class="card">
+                <h3>Status</h3>
+                <div class="status">
+                    <div class="status-item" id="statusPIR">PIR: Inactive</div>
+                    <div class="status-item" id="statusFan">Fan: OFF</div>
+                    <div class="status-item" id="statusLamp">Lamp: OFF</div>
+                    <div class="status-item" id="statusBroker">Broker: Disconnected</div>
+                </div>
+                <p style="margin-top: 15px; font-size: 24px;">Projected Cost: $<span id="projectedCost">0.00</span></p>
+            </div>
+            
+            <div class="card">
+                <h3>Controls</h3>
+                <div>
+                    <button class="btn-on" onclick="sendCommand('fan', 'on')">Fan ON</button>
+                    <button class="btn-off" onclick="sendCommand('fan', 'off')">Fan OFF</button>
+                </div>
+                <div>
+                    <button class="btn-on" onclick="sendCommand('lamp', 'on')">Lamp ON</button>
+                    <button class="btn-off" onclick="sendCommand('lamp', 'off')">Lamp OFF</button>
+                </div>
+                <button class="btn-override" id="overrideBtn" onclick="toggleOverride()">🚨 EMERGENCY OVERRIDE</button>
+            </div>
+        </div>
+        
         <div class="card">
-          <h3>Power Consumption</h3>
-          <canvas id="powerChart"></canvas>
+            <h3>Alerts</h3>
+            <div id="alerts" style="min-height: 50px;">No alerts</div>
         </div>
-
-        <div class="card">
-          <h3>Temperature & Humidity</h3>
-          <canvas id="tempChart"></canvas>
-        </div>
-
-        <div class="card">
-          <h3>Electricity Pricing History</h3>
-          <canvas id="pricingChart"></canvas>
-        </div>
-      </div>
-      
-      <div class="grid">
-        <div class="card">
-          <h3>Status</h3>
-          <div class="status">
-            <div class="status-item" id="statusPIR">PIR: Inactive</div>
-            <div class="status-item" id="statusFan">Fan: OFF</div>
-            <div class="status-item" id="statusLamp">Lamp: OFF</div>
-            <div class="status-item" id="statusBroker">Broker: Disconnected</div>
-          </div>
-          <p style="margin-top: 15px; font-size: 24px;">Projected Cost: $<span id="projectedCost">0.00</span></p>
-        </div>
-
-        <div class="card">
-          <h3>Controls</h3>
-          <div>
-            <button class="btn-on"  onclick="sendCommand('fan','on')">Fan ON</button>
-            <button class="btn-off" onclick="sendCommand('fan','off')">Fan OFF</button>
-          </div>
-          <div>
-            <button class="btn-on"  onclick="sendCommand('lamp','on')">Lamp ON</button>
-            <button class="btn-off" onclick="sendCommand('lamp','off')">Lamp OFF</button>
-          </div>
-          <button class="btn-override" id="overrideBtn" onclick="toggleOverride()">🚨 EMERGENCY OVERRIDE</button>
-        </div>
-      </div>
-
-      <div class="card">
-        <h3>Electricity Pricing</h3>
-        <div id="pricingInfo" class="pricing-info">
-          Loading pricing data...
-        </div>
-      </div>
-
-      <div class="card">
-        <h3>Alerts</h3>
-        <div id="alerts" style="min-height: 50px;">No alerts</div>
-      </div>
     </div>
-  </body>
+
+    <script>
+        // Configuration
+        const BROKER_URL = 'ws://broker.hivemq.com:8000/mqtt'; // Change to your broker
+        const TOPICS = {
+            telemetry: 'sensors/room1/telemetry',
+            control: 'control/room1/cmd',
+            alerts: 'alerts/room1/anomaly'
+        };
+        
+        // GRU Tiered Rates
+        const RATES = [
+            { max: 250, rate: 0.110 },
+            { max: 750, rate: 0.145 },
+            { max: Infinity, rate: 0.185 }
+        ];
+        
+        // State
+        let mqttClient = null;
+        let overrideActive = false;
+        let totalKWh = 0;
+        let deviceStates = { fan: false, lamp: false, pir: false };
+        
+        // Charts
+        const powerData = { labels: [], datasets: [{ label: 'Power (W)', data: [], borderColor: '#00d9ff', tension: 0.4 }] };
+        const tempData = { 
+            labels: [], 
+            datasets: [
+                { label: 'Temp (°C)', data: [], borderColor: '#e94560', yAxisID: 'y' },
+                { label: 'Humidity (%)', data: [], borderColor: '#00d9ff', yAxisID: 'y1' }
+            ] 
+        };
+        
+        const powerChart = new Chart(document.getElementById('powerChart'), {
+            type: 'line',
+            data: powerData,
+            options: { responsive: true, maintainAspectRatio: true, scales: { y: { beginAtZero: true } } }
+        });
+        
+        const tempChart = new Chart(document.getElementById('tempChart'), {
+            type: 'line',
+            data: tempData,
+            options: { 
+                responsive: true, 
+                maintainAspectRatio: true,
+                scales: { 
+                    y: { position: 'left', title: { display: true, text: 'Temp (°C)' } },
+                    y1: { position: 'right', title: { display: true, text: 'Humidity (%)' }, grid: { drawOnChartArea: false } }
+                }
+            }
+        });
+        
+        // MQTT Connection
+        function connectMQTT() {
+            mqttClient = mqtt.connect(BROKER_URL);
+            
+            mqttClient.on('connect', () => {
+                console.log('Connected to MQTT broker');
+                document.getElementById('statusBroker').classList.add('active');
+                document.getElementById('statusBroker').textContent = 'Broker: Connected';
+                mqttClient.subscribe([TOPICS.telemetry, TOPICS.alerts]);
+            });
+            
+            mqttClient.on('message', (topic, message) => {
+                const data = JSON.parse(message.toString());
+                
+                if (topic === TOPICS.telemetry) {
+                    handleTelemetry(data);
+                } else if (topic === TOPICS.alerts) {
+                    handleAlert(data);
+                }
+            });
+            
+            mqttClient.on('error', (err) => {
+                console.error('MQTT Error:', err);
+                document.getElementById('statusBroker').classList.remove('active');
+            });
+        }
+        
+        // Handle incoming telemetry
+        function handleTelemetry(data) {
+            const time = new Date(data.ts * 1000).toLocaleTimeString();
+            const power = (data.amps * 120).toFixed(1); // Assuming 120V
+            
+            // Update charts
+            addDataPoint(powerChart, powerData, time, power);
+            addDataPoint(tempChart, tempData, time, [data.tC, data.rh]);
+            
+            // Update PIR status
+            deviceStates.pir = data.pir === 1;
+            document.getElementById('statusPIR').textContent = `PIR: ${deviceStates.pir ? 'Active' : 'Inactive'}`;
+            document.getElementById('statusPIR').classList.toggle('active', deviceStates.pir);
+            
+            // Calculate cost
+            totalKWh += (data.amps * 120 / 1000) * (5 / 60); // 5-second intervals
+            document.getElementById('projectedCost').textContent = calculateCost(totalKWh).toFixed(2);
+        }
+        
+        // Handle alerts
+        function handleAlert(data) {
+            const alertDiv = document.getElementById('alerts');
+            alertDiv.innerHTML = `<div style="background: #e94560; padding: 10px; border-radius: 4px; margin: 5px 0;">
+                ⚠️ ${data.message || 'Anomaly detected'}
+            </div>` + alertDiv.innerHTML;
+        }
+        
+        // Send control command
+        function sendCommand(device, action) {
+            if (overrideActive) {
+                alert('Manual override is active. Deactivate to control devices.');
+                return;
+            }
+            
+            const cmd = { device, action, reason: 'manual' };
+            mqttClient.publish(TOPICS.control, JSON.stringify(cmd));
+            
+            deviceStates[device] = action === 'on';
+            updateDeviceStatus(device);
+        }
+        
+        // Toggle manual override
+        function toggleOverride() {
+            overrideActive = !overrideActive;
+            const btn = document.getElementById('overrideBtn');
+            const banner = document.getElementById('overrideBanner');
+            
+            if (overrideActive) {
+                // Turn off all devices
+                sendCommand('fan', 'off');
+                sendCommand('lamp', 'off');
+                btn.textContent = '✓ OVERRIDE ACTIVE - CLICK TO RESTORE';
+                btn.classList.add('active');
+                banner.style.display = 'block';
+            } else {
+                btn.textContent = '🚨 EMERGENCY OVERRIDE';
+                btn.classList.remove('active');
+                banner.style.display = 'none';
+            }
+        }
+        
+        // Update device status display
+        function updateDeviceStatus(device) {
+            const elem = document.getElementById(`status${device.charAt(0).toUpperCase() + device.slice(1)}`);
+            elem.textContent = `${device.charAt(0).toUpperCase() + device.slice(1)}: ${deviceStates[device] ? 'ON' : 'OFF'}`;
+            elem.classList.toggle('active', deviceStates[device]);
+        }
+        
+        // Calculate tiered cost
+        function calculateCost(kWh) {
+            let cost = 0;
+            let remaining = kWh;
+            
+            for (let tier of RATES) {
+                const tierKWh = Math.min(remaining, tier.max);
+                cost += tierKWh * tier.rate;
+                remaining -= tierKWh;
+                if (remaining <= 0) break;
+            }
+            
+            return cost;
+        }
+        
+        // Add data point to chart
+        function addDataPoint(chart, data, label, value) {
+            data.labels.push(label);
+            if (Array.isArray(value)) {
+                value.forEach((v, i) => data.datasets[i].data.push(v));
+            } else {
+                data.datasets[0].data.push(value);
+            }
+            
+            if (data.labels.length > 20) {
+                data.labels.shift();
+                data.datasets.forEach(ds => ds.data.shift());
+            }
+            
+            chart.update('none');
+        }
+        
+        // Initialize
+        connectMQTT();
+    </script>
+</body>
 </html>

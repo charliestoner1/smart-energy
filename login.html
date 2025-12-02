@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login - Smart Energy System</title>
+  <link rel="stylesheet" href="dashboard.css">
+  <style>
+    .login-container {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .login-card {
+      background: #16213e;
+      padding: 40px;
+      border-radius: 12px;
+      width: 100%;
+      max-width: 400px;
+      box-shadow: 0 8px 32px rgba(0, 217, 255, 0.1);
+    }
+    .login-card h2 {
+      text-align: center;
+      margin-bottom: 30px;
+      color: #00d9ff;
+    }
+    .form-group {
+      margin-bottom: 20px;
+    }
+    .form-group label {
+      display: block;
+      margin-bottom: 8px;
+      color: #aaa;
+    }
+    .form-group input {
+      width: 100%;
+      padding: 12px;
+      background: #0f3460;
+      border: 1px solid #00d9ff;
+      border-radius: 6px;
+      color: #eee;
+      font-size: 16px;
+    }
+    .form-group input:focus {
+      outline: none;
+      border-color: #00d9ff;
+      box-shadow: 0 0 8px rgba(0, 217, 255, 0.3);
+    }
+    .btn-login {
+      width: 100%;
+      padding: 14px;
+      background: #00d9ff;
+      color: #000;
+      border: none;
+      border-radius: 6px;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: transform 0.2s;
+    }
+    .btn-login:hover {
+      transform: scale(1.02);
+    }
+    .back-link {
+      display: block;
+      text-align: center;
+      margin-top: 20px;
+      color: #00d9ff;
+      text-decoration: none;
+    }
+    .error-msg {
+      background: #e94560;
+      color: #fff;
+      padding: 10px;
+      border-radius: 6px;
+      margin-bottom: 20px;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="login-container">
+    <div class="login-card">
+      <h2>Login to Dashboard</h2>
+      <div class="error-msg" id="errorMsg">Invalid username or password</div>
+      <form id="loginForm">
+        <div class="form-group">
+          <label for="username">Username</label>
+          <input type="text" id="username" name="username" required autocomplete="username">
+        </div>
+        <div class="form-group">
+          <label for="password">Password</label>
+          <input type="password" id="password" name="password" required autocomplete="current-password">
+        </div>
+        <button type="submit" class="btn-login">Login</button>
+      </form>
+      <a href="index.html" class="back-link">← Back to Home</a>
+    </div>
+  </div>
+
+  <script>
+    document.getElementById('loginForm').addEventListener('submit', function(e) {
+      e.preventDefault();
+      
+      const username = document.getElementById('username').value;
+      const password = document.getElementById('password').value;
+      
+      // Simple authentication - replace with real authentication later
+      if (username === 'admin' && password === 'admin123') {
+        sessionStorage.setItem('authenticated', 'true');
+        window.location.href = 'dashboard.html';
+      } else {
+        document.getElementById('errorMsg').style.display = 'block';
+      }
+    });
+  </script>
+</body>
+</html>
