@@ -6,6 +6,7 @@ log/
 data/*.db
 mosquitto/data/
 mosquitto/log/
+*.db
 
 # Python
 __pycache__/
