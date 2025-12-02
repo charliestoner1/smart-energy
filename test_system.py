@@ -433,7 +433,7 @@ def run_all_tests():
     
     if passed == total:
         print(f"{Colors.OKGREEN}{Colors.BOLD}All tests passed! ✓{Colors.ENDC}")
-        print_info("Your system is ready for deployment")
+        print_info("The smart energy system is ready for deployment")
     else:
         print(f"{Colors.WARNING}{Colors.BOLD}Some tests failed{Colors.ENDC}")
         print_warning("Review the errors above and fix issues before deployment")

@@ -91,6 +91,40 @@
     display: none;
     animation: pulse 1s infinite;
   }
+
+  .pricing-info {
+    padding: 15px;
+    border-radius: 4px;
+    background: #0f3460;
+    line-height: 1.8;
+  }
+
+  .pricing-info.tier-very_low {
+    background: #00d9ff22;
+    border-left: 4px solid #00d9ff;
+  }
+
+  .pricing-info.tier-low {
+    background: #51cf6622;
+    border-left: 4px solid #51cf66;
+  }
+
+  .pricing-info.tier-normal {
+    background: #ffd43b22;
+    border-left: 4px solid #ffd43b;
+  }
+
+  .pricing-info.tier-high {
+    background: #ff922b22;
+    border-left: 4px solid #ff922b;
+  }
+
+  .pricing-info.tier-very_high,
+  .pricing-info.tier-critical {
+    background: #ff6b6b22;
+    border-left: 4px solid #ff6b6b;
+    animation: pulse 2s infinite;
+  }
   
   @keyframes pulse {
     0%,
