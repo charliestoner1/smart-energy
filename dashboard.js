@@ -121,10 +121,18 @@ function connectMQTT() {
   });
 }
 
-function setBrokerStatus(connected) {
-  const el = document.getElementById('statusBroker');
-  el.textContent = connected ? 'Broker: Connected' : 'Broker: Disconnected';
-  el.classList.toggle('active', connected);
+// ============================================
+// Handle MQTT Messages
+// ============================================
+function handleMQTTMessage(topic, data) {
+  if (topic === CONFIG.TOPICS.TELEMETRY) {
+    // Expected format: {"ts": 1738176000, "tC": 24.1, "rh": 58, "pir": 1, "amps": 0.42}
+    updateTelemetry(data)
+  } else if (topic === CONFIG.TOPICS.CONTROL_ACK) {
+    console.log("[v0] Control acknowledged:", data)
+  } else if (topic === CONFIG.TOPICS.ALERTS) {
+    addAlert(data.message || JSON.stringify(data))
+  }
 }
 
 function handleTelemetry(d) {
@@ -201,6 +209,9 @@ function publishCmd(device, action, reason = 'manual') {
   mqttClient.publish(TOPICS.control, JSON.stringify({ device, action, reason }));
 }
 
+// ============================================
+// Send Control Command
+// ============================================
 function sendCommand(device, action) {
   if (overrideActive) { alert('Override active'); return; }
   if (currentEcoMode) { alert('System in ECO mode - devices controlled automatically'); return; }
@@ -226,12 +237,8 @@ function toggleOverride() {
     btn.classList.remove('active');
     banner.style.display = 'none';
   }
-}
 
-function handleStateEcho(device, payload) {
-  deviceStates[device] = !!payload.on;
-  updateDeviceStatus(device);
-}
+  mqttClient.publish(CONFIG.TOPICS.CONTROL_CMD, JSON.stringify(command), { qos: 1 })
 
 function updateDeviceStatus(device) {
   const el = document.getElementById(`status${device.charAt(0).toUpperCase()}${device.slice(1)}`);
