@@ -1,5 +1,6 @@
 
 const BROKER_URL = 'wss://1e1a4e5c581e4bc3a697f8937d7fb9e4.s1.eu.hivemq.cloud:8884/mqtt';
+const PRICING_API_URL = 'http://localhost:5000'; // comed api url
 
 
 const mqttOptions = {
@@ -32,8 +33,12 @@ let overrideActive = false;
 let accumulatedWh = 0;
 let lastSampleTsMs = null;
 
+
 const deviceStates = { fan: false, lamp: false, pir: false };
 
+// pricing data variables
+let currentPricingData = null;
+let pricingUpdateInterval = null;
 
 const powerData = { labels: [], datasets: [{ label: 'Power (W)', data: [], borderColor: '#00d9ff', tension: 0.35, pointRadius: 0 }] };
 const tempData  = {
@@ -71,6 +76,55 @@ const tempChart = new Chart(document.getElementById('tempChart'), {
   }
 });
 
+const pricingData = { 
+  labels: [], 
+  datasets: [
+    { 
+      label: 'Price (¢/kWh)', 
+      data: [], 
+      borderColor: '#ffd43b',
+      backgroundColor: 'rgba(255, 212, 59, 0.1)',
+      tension: 0.35, 
+      pointRadius: 2,
+      fill: true
+    }
+  ] 
+};
+
+const pricingChart = new Chart(document.getElementById('pricingChart'), {
+  type: 'line',
+  data: pricingData,
+  options: {
+    responsive: true,
+    maintainAspectRatio: true,
+    animation: false,
+    scales: { 
+      y: { 
+        beginAtZero: true, 
+        title: { display: true, text: 'Price (¢/kWh)' },
+        ticks: {
+          callback: function(value) {
+            return value.toFixed(2) + '¢';
+          }
+        }
+      },
+      x: {
+        title: { display: true, text: 'Time' }
+      }
+    },
+    plugins: { 
+      legend: { display: true },
+      tooltip: {
+        callbacks: {
+          label: function(context) {
+            return 'Price: ' + context.parsed.y.toFixed(2) + '¢/kWh';
+          }
+        }
+      }
+    }
+  }
+});
+
 function addDataPoint(chart, data, label, value) {
   data.labels.push(label);
   if (Array.isArray(value)) {
@@ -93,6 +147,13 @@ function connectMQTT() {
   mqttClient.on('connect', () => {
     setBrokerStatus(true);
     console.log('✅ Connected to HiveMQ Cloud');
+
+    fetchPricingData(); // immediate fetch
+    fetchPriceHistory(); // load last 6 hours of pricing history
+    pricingUpdateInterval = setInterval(fetchPricingData, 300000); // every 5 minutes
+
+    
+
     mqttClient.subscribe([
       TOPICS.telemetry,
       TOPICS.alerts,
@@ -125,7 +186,7 @@ function setBrokerStatus(connected) {
 
 function handleTelemetry(d) {
   const tsMs = coerceTsMs(d.ts);
-  const timeLabel = new Date(tsMs).toLocaleTimeString();
+  const timeLabel = new Date(currentPricingData.millisUTC).toLocaleTimeString();
 
   const voltage = isFiniteNumber(d.voltage) ? d.voltage : 120;
   const amps    = isFiniteNumber(d.amps) ? d.amps : 0;
@@ -243,6 +304,80 @@ function escapeHtml(s) {
 
 function capitalize(s){ return s ? s[0].toUpperCase()+s.slice(1) : s; }
 
+// fetch pricing data
+async function fetchPricingData() {
+  try {
+    const response = await fetch(`${PRICING_API_URL}/api/price/current`);
+    if (response.ok) {
+      currentPricingData = await response.json();
+      updatePricingDisplay();
+      updateCostCalculation();
+    } else {
+      console.error('Failed to fetch pricing data:', response.status);
+    }
+  } catch (error) {
+    console.error('Error fetching pricing data:', error);
+  }
+}
+
+function updatePricingDisplay() {
+  if (!currentPricingData) return;
+  
+  const price = currentPricingData.price_cents_per_kwh;
+  const tier = currentPricingData.tier;
+  const recommendation = currentPricingData.recommendation;
+  
+  const pricingDiv = document.getElementById('pricingInfo');
+  if (pricingDiv) {
+    pricingDiv.innerHTML = `
+      <strong>Current Price:</strong> ${price.toFixed(2)}¢/kWh<br>
+      <strong>Tier:</strong> ${tier.replace('_', ' ').toUpperCase()}<br>
+      <strong>Action:</strong> ${recommendation.action}<br>
+      <small>${recommendation.message}</small>
+    `;
+    
+    pricingDiv.className = 'pricing-info tier-' + tier;
+  }
+
+  const timeLabel = new Date(currentPricingData.timestamp).toLocaleTimeString();
+  addDataPoint(pricingChart, pricingData, timeLabel, price);
+}
+
+// update current cost calculation to use comed pricing data
+function updateCostCalculation() {
+  if (!currentPricingData) return;
+  
+  const kWh = accumulatedWh / 1000;
+  const pricePerKwh = currentPricingData.price_cents_per_kwh / 100;
+  const cost = kWh * pricePerKwh;
+  
+  document.getElementById('projectedCost').textContent = cost.toFixed(2);
+}
+
+async function fetchPriceHistory() {
+  try {
+    const response = await fetch(`${PRICING_API_URL}/api/price/history?hours=6`);
+    if (response.ok) {
+      const data = await response.json();
+      
+      // Clear existing data
+      pricingData.labels = [];
+      pricingData.datasets[0].data = [];
+      
+      // Add historical data (reverse to show oldest to newest)
+      data.data.reverse().forEach(record => {
+        const time = new Date(record.millisUTC).toLocaleTimeString();
+        pricingData.labels.push(time);
+        pricingData.datasets[0].data.push(record.price_cents_per_kwh);
+      });
+      
+      pricingChart.update('none');
+      console.log(`Loaded ${data.count} price records`);
+    }
+  } catch (error) {
+    console.error('Error fetching price history:', error);
+  }
+}
 
 connectMQTT();
 
