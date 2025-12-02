@@ -3,81 +3,284 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Smart Energy Dashboard</title>
+  <title>Smart Energy | Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <link rel="stylesheet" href="dashboard.css">
-  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js" defer></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
-  <script src="dashboard.js" defer></script>
-  <style>
-    .mode-badge { display: inline-block; padding: 8px 16px; border-radius: 20px; font-weight: bold; font-size: 14px; margin-left: 15px; }
-    .mode-badge.eco { background: linear-gradient(135deg, #51cf66, #40c057); color: #000; }
-    .mode-badge.manual { background: linear-gradient(135deg, #ffd43b, #fab005); color: #000; }
-    .header-row { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; margin-bottom: 20px; }
-    .room-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px; }
-    .room-card { background: #0f3460; padding: 15px; border-radius: 8px; border-left: 4px solid #00d9ff; }
-    .room-card.room-a { border-left-color: #e94560; }
-    .room-card.room-b { border-left-color: #ff922b; }
-    .room-card strong { display: block; margin-bottom: 10px; font-size: 1.1em; }
-    .alert-item { background: #e94560; padding: 10px; border-radius: 4px; margin: 5px 0; }
-    .controls-note { font-size: 12px; color: #888; margin-top: 10px; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 4px; }
-  </style>
 </head>
 <body>
-  <div class="container">
-    <div class="override-banner" id="overrideBanner">⚠️ MANUAL OVERRIDE ACTIVE ⚠️</div>
-
-    <div class="header-row">
-      <h1>Smart Energy Dashboard</h1>
-      <span id="modeStatus" class="mode-badge eco">ECO MODE</span>
-    </div>
-
-    <div class="room-grid">
-      <div class="room-card room-a" id="roomAInfo"><strong>Room A</strong>Temp: --°C<br>Humidity: --%<br>Status: ⚪ Unknown</div>
-      <div class="room-card room-b" id="roomBInfo"><strong>Room B</strong>Temp: --°C<br>Humidity: --%<br>Status: ⚪ Unknown</div>
-    </div>
-
-    <div class="grid">
-      <div class="card"><h3>Power Consumption</h3><canvas id="powerChart"></canvas></div>
-      <div class="card"><h3>Temperature & Humidity</h3><canvas id="tempChart"></canvas></div>
-      <div class="card"><h3>Electricity Pricing</h3><canvas id="pricingChart"></canvas></div>
-    </div>
-
-    <div class="grid">
-      <div class="card">
-        <h3>System Status</h3>
-        <div class="status">
-          <div class="status-item" id="statusPIR">Rooms: Unknown</div>
-          <div class="status-item" id="statusFan">Fan: OFF</div>
-          <div class="status-item" id="statusLamp">Lamp: OFF</div>
-          <div class="status-item" id="statusBroker">Broker: Disconnected</div>
-        </div>
-        <p style="margin-top: 15px; font-size: 24px;">Projected Cost: $<span id="projectedCost">0.00</span></p>
-      </div>
-
-      <div class="card">
-        <h3>Manual Controls</h3>
-        <div>
-          <button class="btn-on" onclick="sendCommand('fan','on')">Fan ON</button>
-          <button class="btn-off" onclick="sendCommand('fan','off')">Fan OFF</button>
-        </div>
-        <div>
-          <button class="btn-on" onclick="sendCommand('lamp','on')">Lamp ON</button>
-          <button class="btn-off" onclick="sendCommand('lamp','off')">Lamp OFF</button>
-        </div>
-        <button class="btn-override" id="overrideBtn" onclick="toggleOverride()">🚨 EMERGENCY OVERRIDE</button>
-        <div class="controls-note">Manual controls only work in MANUAL mode. Use GPIO14 button on Sensor Hub to switch modes.</div>
+  <!-- Sidebar -->
+  <nav class="sidebar">
+    <div class="sidebar-header">
+      <div class="logo">
+        <img src="images/NovaHouse.png" alt="NovaSense" style="height: 36px; width: auto;">
+        <span class="logo-text">NovaSense</span>
       </div>
     </div>
-
-    <div class="card">
-      <h3>Electricity Pricing (ComEd Real-Time)</h3>
-      <div id="pricingInfo" class="pricing-info">Loading pricing data...</div>
+    
+    <div class="nav-section">
+      <span class="nav-label">Main</span>
+      <a href="#" class="nav-item active">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="7" height="7" rx="1"/>
+          <rect x="14" y="3" width="7" height="7" rx="1"/>
+          <rect x="3" y="14" width="7" height="7" rx="1"/>
+          <rect x="14" y="14" width="7" height="7" rx="1"/>
+        </svg>
+        Dashboard
+      </a>
+      <a href="#" class="nav-item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 2v20M2 12h20"/>
+          <circle cx="12" cy="12" r="10"/>
+        </svg>
+        Analytics
+      </a>
+      <a href="#" class="nav-item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+        </svg>
+        Devices
+      </a>
     </div>
-
-    <div class="card">
-      <h3>Alerts</h3>
-      <div id="alerts" style="min-height: 50px;">No alerts</div>
+    
+    <div class="nav-section">
+      <span class="nav-label">Settings</span>
+      <a href="#" class="nav-item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+        </svg>
+        Preferences
+      </a>
+      <a href="index.html" class="nav-item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+          <polyline points="16 17 21 12 16 7"/>
+          <line x1="21" y1="12" x2="9" y2="12"/>
+        </svg>
+        Logout
+      </a>
     </div>
-  </div>
+    
+    <div class="sidebar-footer">
+      <div class="connection-status" id="connectionStatus">
+        <span class="status-dot"></span>
+        <span>Connecting...</span>
+      </div>
+    </div>
+  </nav>
+  
+  <!-- Main Content -->
+  <main class="main-content">
+    <!-- Header -->
+    <header class="header">
+      <div class="header-left">
+        <h1>Dashboard</h1>
+        <p class="header-subtitle">Real-time energy monitoring</p>
+      </div>
+      <div class="header-right">
+        <div class="mode-badge" id="modeBadge">
+          <span class="mode-icon">⚡</span>
+          <span class="mode-text">ECO MODE</span>
+        </div>
+        <button class="btn-override" id="overrideBtn" onclick="toggleOverride()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+          </svg>
+          Emergency Override
+        </button>
+      </div>
+    </header>
+    
+    <!-- Override Banner -->
+    <div class="override-banner" id="overrideBanner">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+      </svg>
+      MANUAL OVERRIDE ACTIVE — ALL AUTOMATION DISABLED
+    </div>
+    
+    <!-- Pricing Hero Card -->
+    <section class="pricing-hero" id="pricingHero">
+      <div class="pricing-main">
+        <span class="pricing-label">Current Electricity Price</span>
+        <div class="pricing-value">
+          <span class="price-number" id="currentPrice">--</span>
+          <span class="price-unit">¢/kWh</span>
+        </div>
+        <div class="pricing-tier" id="pricingTier">
+          <span class="tier-badge">LOADING</span>
+          <span class="tier-message" id="tierMessage">Fetching pricing data...</span>
+        </div>
+      </div>
+      <div class="pricing-meta">
+        <div class="meta-item">
+          <span class="meta-label">24h Average</span>
+          <span class="meta-value" id="avgPrice">--¢</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">Today's Range</span>
+          <span class="meta-value" id="priceRange">-- - --¢</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">Recommended</span>
+          <span class="meta-value" id="recommendation">--</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">Projected Cost</span>
+          <span class="meta-value highlight">$<span id="projectedCost">0.00</span></span>
+        </div>
+      </div>
+    </section>
+    
+    <!-- Room Cards -->
+    <section class="room-grid">
+      <div class="room-card" id="roomA">
+        <div class="room-header">
+          <h3>Room A</h3>
+          <span class="occupancy-badge" id="occupancyA">
+            <span class="occupancy-dot"></span>
+            Vacant
+          </span>
+        </div>
+        <div class="room-stats">
+          <div class="room-stat">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/>
+            </svg>
+            <div class="stat-info">
+              <span class="stat-value" id="tempA">--°C</span>
+              <span class="stat-label">Temperature</span>
+            </div>
+          </div>
+          <div class="room-stat">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/>
+            </svg>
+            <div class="stat-info">
+              <span class="stat-value" id="humidityA">--%</span>
+              <span class="stat-label">Humidity</span>
+            </div>
+          </div>
+        </div>
+        <div class="room-controls">
+          <div class="control-item">
+            <span class="control-label">Fan</span>
+            <div class="control-buttons">
+              <button class="btn-control" onclick="sendCommand('fanA','on')">ON</button>
+              <button class="btn-control off" onclick="sendCommand('fanA','off')">OFF</button>
+            </div>
+            <span class="control-status" id="statusFanA">OFF</span>
+          </div>
+          <div class="control-item">
+            <span class="control-label">Light</span>
+            <div class="control-buttons">
+              <button class="btn-control" onclick="sendCommand('lampA','on')">ON</button>
+              <button class="btn-control off" onclick="sendCommand('lampA','off')">OFF</button>
+            </div>
+            <span class="control-status" id="statusLampA">OFF</span>
+          </div>
+        </div>
+      </div>
+      
+      <div class="room-card" id="roomB">
+        <div class="room-header">
+          <h3>Room B</h3>
+          <span class="occupancy-badge" id="occupancyB">
+            <span class="occupancy-dot"></span>
+            Vacant
+          </span>
+        </div>
+        <div class="room-stats">
+          <div class="room-stat">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/>
+            </svg>
+            <div class="stat-info">
+              <span class="stat-value" id="tempB">--°C</span>
+              <span class="stat-label">Temperature</span>
+            </div>
+          </div>
+          <div class="room-stat">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/>
+            </svg>
+            <div class="stat-info">
+              <span class="stat-value" id="humidityB">--%</span>
+              <span class="stat-label">Humidity</span>
+            </div>
+          </div>
+        </div>
+        <div class="room-controls">
+          <div class="control-item">
+            <span class="control-label">Fan</span>
+            <div class="control-buttons">
+              <button class="btn-control" onclick="sendCommand('fanB','on')">ON</button>
+              <button class="btn-control off" onclick="sendCommand('fanB','off')">OFF</button>
+            </div>
+            <span class="control-status" id="statusFanB">OFF</span>
+          </div>
+          <div class="control-item">
+            <span class="control-label">Light</span>
+            <div class="control-buttons">
+              <button class="btn-control" onclick="sendCommand('lampB','on')">ON</button>
+              <button class="btn-control off" onclick="sendCommand('lampB','off')">OFF</button>
+            </div>
+            <span class="control-status" id="statusLampB">OFF</span>
+          </div>
+        </div>
+      </div>
+    </section>
+    
+    <!-- Charts Grid -->
+    <section class="charts-grid">
+      <div class="chart-card">
+        <div class="chart-header">
+          <h3>Power Consumption</h3>
+          <span class="chart-live">● LIVE</span>
+        </div>
+        <canvas id="powerChart"></canvas>
+      </div>
+      
+      <div class="chart-card">
+        <div class="chart-header">
+          <h3>Temperature & Humidity</h3>
+          <span class="chart-live">● LIVE</span>
+        </div>
+        <canvas id="tempChart"></canvas>
+      </div>
+      
+      <div class="chart-card full-width">
+        <div class="chart-header">
+          <h3>Electricity Pricing History</h3>
+          <span class="chart-subtitle">Last 6 hours</span>
+        </div>
+        <canvas id="pricingChart"></canvas>
+      </div>
+    </section>
+    
+    <!-- Alerts Section -->
+    <section class="alerts-section">
+      <div class="alerts-header">
+        <h3>System Alerts</h3>
+        <button class="btn-clear" onclick="clearAlerts()">Clear All</button>
+      </div>
+      <div class="alerts-list" id="alerts">
+        <div class="alert-item info">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="M12 16v-4M12 8h.01"/>
+          </svg>
+          <span>System initialized. Waiting for sensor data...</span>
+          <span class="alert-time">Just now</span>
+        </div>
+      </div>
+    </section>
+  </main>
+  
+  <script src="dashboard.js"></script>
 </body>
 </html>

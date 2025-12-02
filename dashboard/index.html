@@ -1,57 +1,505 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Smart Energy Optimization System</title>
-    <link rel="stylesheet" href="dashboard.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NovaSense Home | Smart Energy Optimization</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    
+    :root {
+      --bg-dark: #0f0f1a;
+      --bg-card: #1a1a2e;
+      --accent-1: #667eea;
+      --accent-2: #764ba2;
+      --accent-3: #f093fb;
+      --text-primary: #ffffff;
+      --text-secondary: #a0a0b0;
+      --text-muted: #6a6a7a;
+    }
+    
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      background: var(--bg-dark);
+      color: var(--text-primary);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+    
+    /* Animated background */
+    .bg-gradient {
+      position: fixed;
+      inset: 0;
+      background: 
+        radial-gradient(ellipse at 20% 20%, rgba(102, 126, 234, 0.15) 0%, transparent 50%),
+        radial-gradient(ellipse at 80% 80%, rgba(118, 75, 162, 0.15) 0%, transparent 50%),
+        radial-gradient(ellipse at 50% 50%, rgba(240, 147, 251, 0.05) 0%, transparent 50%);
+      z-index: -1;
+    }
+    
+    .bg-grid {
+      position: fixed;
+      inset: 0;
+      background-image: 
+        linear-gradient(rgba(102, 126, 234, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(102, 126, 234, 0.03) 1px, transparent 1px);
+      background-size: 80px 80px;
+      z-index: -1;
+    }
+    
+    /* Navigation */
+    nav {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 24px 60px;
+      position: relative;
+      z-index: 10;
+    }
+    
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    
+    .logo img {
+      height: 48px;
+      width: auto;
+    }
+    
+    .logo-text {
+      font-size: 22px;
+      font-weight: 700;
+      background: linear-gradient(135deg, var(--accent-1), var(--accent-2));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    
+    .nav-links {
+      display: flex;
+      gap: 40px;
+    }
+    
+    .nav-links a {
+      color: var(--text-secondary);
+      text-decoration: none;
+      font-weight: 500;
+      transition: color 0.2s;
+    }
+    
+    .nav-links a:hover {
+      color: var(--text-primary);
+    }
+    
+    .nav-buttons {
+      display: flex;
+      gap: 16px;
+    }
+    
+    .btn {
+      padding: 12px 28px;
+      border-radius: 10px;
+      font-family: inherit;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-decoration: none;
+    }
+    
+    .btn-ghost {
+      background: transparent;
+      border: none;
+      color: var(--text-secondary);
+    }
+    
+    .btn-ghost:hover {
+      color: var(--text-primary);
+    }
+    
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent-1), var(--accent-2));
+      border: none;
+      color: white;
+    }
+    
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 40px rgba(102, 126, 234, 0.4);
+    }
+    
+    /* Hero Section */
+    .hero {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 80px 60px 120px;
+      text-align: center;
+    }
+    
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      background: rgba(102, 126, 234, 0.1);
+      border: 1px solid rgba(102, 126, 234, 0.3);
+      border-radius: 50px;
+      font-size: 14px;
+      color: var(--accent-1);
+      margin-bottom: 32px;
+    }
+    
+    .hero-badge::before {
+      content: '';
+      width: 8px;
+      height: 8px;
+      background: var(--accent-1);
+      border-radius: 50%;
+      animation: pulse 2s infinite;
+    }
+    
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+    
+    .hero h1 {
+      font-size: 72px;
+      font-weight: 800;
+      line-height: 1.1;
+      margin-bottom: 24px;
+    }
+    
+    .hero h1 span {
+      background: linear-gradient(135deg, var(--accent-1), var(--accent-2), var(--accent-3));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    
+    .hero p {
+      font-size: 20px;
+      color: var(--text-secondary);
+      max-width: 600px;
+      margin: 0 auto 48px;
+      line-height: 1.6;
+    }
+    
+    .hero-buttons {
+      display: flex;
+      justify-content: center;
+      gap: 16px;
+      margin-bottom: 80px;
+    }
+    
+    .btn-large {
+      padding: 18px 40px;
+      font-size: 17px;
+    }
+    
+    .btn-outline {
+      background: transparent;
+      border: 2px solid var(--accent-1);
+      color: var(--accent-1);
+    }
+    
+    .btn-outline:hover {
+      background: var(--accent-1);
+      color: white;
+      transform: translateY(-2px);
+    }
+    
+    /* Stats */
+    .stats {
+      display: flex;
+      justify-content: center;
+      gap: 80px;
+    }
+    
+    .stat {
+      text-align: center;
+    }
+    
+    .stat-value {
+      font-size: 48px;
+      font-weight: 800;
+      background: linear-gradient(135deg, var(--accent-1), var(--accent-2));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    
+    .stat-label {
+      font-size: 14px;
+      color: var(--text-muted);
+      margin-top: 8px;
+    }
+    
+    /* Features Section */
+    .features {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 80px 60px;
+    }
+    
+    .features-header {
+      text-align: center;
+      margin-bottom: 60px;
+    }
+    
+    .features-header h2 {
+      font-size: 42px;
+      font-weight: 700;
+      margin-bottom: 16px;
+    }
+    
+    .features-header p {
+      color: var(--text-secondary);
+      font-size: 18px;
+    }
+    
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 24px;
+    }
+    
+    .feature-card {
+      background: var(--bg-card);
+      border: 1px solid rgba(102, 126, 234, 0.1);
+      border-radius: 20px;
+      padding: 32px;
+      transition: all 0.3s;
+    }
+    
+    .feature-card:hover {
+      border-color: var(--accent-1);
+      transform: translateY(-4px);
+      box-shadow: 0 20px 60px rgba(102, 126, 234, 0.15);
+    }
+    
+    .feature-icon {
+      width: 56px;
+      height: 56px;
+      background: linear-gradient(135deg, var(--accent-1), var(--accent-2));
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 24px;
+    }
+    
+    .feature-icon svg {
+      width: 28px;
+      height: 28px;
+      color: white;
+    }
+    
+    .feature-card h3 {
+      font-size: 20px;
+      font-weight: 600;
+      margin-bottom: 12px;
+    }
+    
+    .feature-card p {
+      color: var(--text-secondary);
+      line-height: 1.6;
+      font-size: 15px;
+    }
+    
+    /* CTA Section */
+    .cta {
+      max-width: 1000px;
+      margin: 40px auto 80px;
+      padding: 60px;
+      background: linear-gradient(135deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.1));
+      border: 1px solid rgba(102, 126, 234, 0.2);
+      border-radius: 24px;
+      text-align: center;
+    }
+    
+    .cta h2 {
+      font-size: 36px;
+      font-weight: 700;
+      margin-bottom: 16px;
+    }
+    
+    .cta p {
+      color: var(--text-secondary);
+      font-size: 18px;
+      margin-bottom: 32px;
+    }
+    
+    /* Footer */
+    footer {
+      text-align: center;
+      padding: 40px;
+      border-top: 1px solid rgba(255,255,255,0.05);
+      color: var(--text-muted);
+      font-size: 14px;
+    }
+    
+    /* Responsive */
+    @media (max-width: 900px) {
+      nav { padding: 20px 30px; }
+      .nav-links { display: none; }
+      
+      .hero { padding: 60px 30px 80px; }
+      .hero h1 { font-size: 48px; }
+      .hero p { font-size: 18px; }
+      
+      .stats { gap: 40px; }
+      .stat-value { font-size: 36px; }
+      
+      .features { padding: 60px 30px; }
+      .features-grid { grid-template-columns: 1fr; }
+      
+      .cta { margin: 40px 30px 60px; padding: 40px 30px; }
+    }
+    
+    @media (max-width: 600px) {
+      .hero h1 { font-size: 36px; }
+      .hero-buttons { flex-direction: column; }
+      .btn-large { width: 100%; text-align: center; }
+      .stats { flex-direction: column; gap: 24px; }
+    }
+  </style>
 </head>
 <body>
-    <div class="container">
-        <header style="text-align: center; padding: 40px 20px;">
-            <!-- Added NovaSense Home logo -->
-            <img src="/dashboard/images/NovaHouse.png"
-                 alt="NovaSense Home Logo" 
-                 style="width: 200px; height: auto; margin-bottom: 20px;">
-            <h1 style="font-size: 2.5em; margin-bottom: 10px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
-                Smart Energy Optimization System
-            </h1>
-            <p style="font-size: 1.2em; color: #ffffff; margin-bottom: 30px;">
-                NovaSense Home - Empowering Efficient Living
-            </p>
-        </header>
-
-        <div style="max-width: 800px; margin: 0 auto; padding: 20px;">
-            <div class="card" style="margin-bottom: 30px;">
-                <h2 style="margin-bottom: 20px;">About This System</h2>
-                <p style="line-height: 1.6; color: hsl(0, 0%, 100%); margin-bottom: 15px;">
-                    Our ESP32-based Smart Energy Optimization System uses real-time sensor data to monitor and control 
-                    energy consumption in your space. With MQTT communication and automated decision-making, the system 
-                    optimizes energy usage while maintaining comfort.
-                </p>
-            </div>
-
-            <div class="card" style="margin-bottom: 30px;">
-                <h2 style="margin-bottom: 20px;">Key Features</h2>
-                <ul style="line-height: 2; color: hsl(0, 0%, 100%);">
-                    <li><strong>Real-Time Monitoring:</strong> Track temperature, humidity, motion, and power consumption</li>
-                    <li><strong>Automated Control:</strong> Smart decisions based on occupancy and environmental conditions</li>
-                    <li><strong>Cost Tracking:</strong> GRU tiered rate calculations for accurate energy cost projections</li>
-                    <li><strong>Remote Access:</strong> Control devices from anywhere via web dashboard</li>
-                    <li><strong>Emergency Override:</strong> Manual safety controls for security</li>
-                </ul>
-            </div>
-
-            <div style="text-align: center; padding: 30px;">
-                <a href="login.html" style="display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 15px 40px; text-decoration: none; border-radius: 8px; font-size: 1.1em; font-weight: 600; box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4); transition: transform 0.2s;">
-                    Get Started
-                </a>
-            </div>
-        </div>
-
-        <footer style="text-align: center; padding: 40px 20px; color: #888;">
-            <p>ESP32 Smart Energy Optimization System &copy; 2025</p>
-        </footer>
+  <div class="bg-gradient"></div>
+  <div class="bg-grid"></div>
+  
+  <nav>
+    <div class="logo">
+      <img src="images/NovaHouse.png" alt="NovaSense Home">
+      <span class="logo-text">NovaSense</span>
     </div>
+    
+    <div class="nav-links">
+      <a href="#features">Features</a>
+      <a href="#about">About</a>
+      <a href="#pricing">Pricing</a>
+    </div>
+    
+    <div class="nav-buttons">
+      <a href="login.html" class="btn btn-ghost">Sign In</a>
+      <a href="login.html" class="btn btn-primary">Get Started</a>
+    </div>
+  </nav>
+  
+  <section class="hero">
+    <div class="hero-badge">Live ComEd Pricing Integration</div>
+    
+    <h1>Smarter Energy<br><span>for Modern Living</span></h1>
+    
+    <p>Monitor real-time electricity prices, optimize consumption, and reduce costs with our dual-hub ESP32 system. Save 10-15% on your energy bills.</p>
+    
+    <div class="hero-buttons">
+      <a href="login.html" class="btn btn-primary btn-large">Launch Dashboard</a>
+      <a href="#features" class="btn btn-outline btn-large">Learn More</a>
+    </div>
+    
+    <div class="stats">
+      <div class="stat">
+        <div class="stat-value">15%</div>
+        <div class="stat-label">Average Savings</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value">5min</div>
+        <div class="stat-label">Price Updates</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value">24/7</div>
+        <div class="stat-label">Monitoring</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value">&lt;500ms</div>
+        <div class="stat-label">Response Time</div>
+      </div>
+    </div>
+  </section>
+  
+  <section class="features" id="features">
+    <div class="features-header">
+      <h2>Intelligent Energy Management</h2>
+      <p>Everything you need to optimize your energy consumption</p>
+    </div>
+    
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+          </svg>
+        </div>
+        <h3>Real-Time Pricing</h3>
+        <p>Live ComEd 5-minute pricing data with tier classification and smart recommendations for optimal usage times.</p>
+      </div>
+      
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/>
+          </svg>
+        </div>
+        <h3>Environmental Sensors</h3>
+        <p>Monitor temperature, humidity, and occupancy across multiple rooms with DHT22 and PIR sensors.</p>
+      </div>
+      
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="2" y="7" width="20" height="14" rx="2"/>
+            <path d="M16 3v4M8 3v4M2 11h20"/>
+          </svg>
+        </div>
+        <h3>Automated Control</h3>
+        <p>Smart relay control for fans and lights based on occupancy, pricing tiers, and environmental conditions.</p>
+      </div>
+      
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2v20M2 12h20"/>
+            <circle cx="12" cy="12" r="10"/>
+          </svg>
+        </div>
+        <h3>Cost Tracking</h3>
+        <p>Accurate GRU tiered rate calculations with projected monthly bills and savings analysis.</p>
+      </div>
+      
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+          </svg>
+        </div>
+        <h3>Emergency Override</h3>
+        <p>Manual safety controls to instantly disable automation and protect against data manipulation.</p>
+      </div>
+      
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="2" y="3" width="20" height="14" rx="2"/>
+            <path d="M8 21h8M12 17v4"/>
+          </svg>
+        </div>
+        <h3>Remote Dashboard</h3>
+        <p>Access your energy data from anywhere with our responsive web dashboard featuring real-time charts.</p>
+      </div>
+    </div>
+  </section>
+  
+  <section class="cta">
+    <h2>Ready to Start Saving?</h2>
+    <p>Join hundreds of households optimizing their energy consumption with NovaSense Home.</p>
+    <a href="login.html" class="btn btn-primary btn-large">Get Started Free</a>
+  </section>
+  
+  <footer>
+    <p>NovaSense Home &copy; 2025 — ESP32 Smart Energy Optimization System</p>
+  </footer>
 </body>
 </html>
