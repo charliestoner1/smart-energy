@@ -1,6 +1,6 @@
 // dashboard.js
 const BROKER_URL = 'wss://1e1a4e5c581e4bc3a697f8937d7fb9e4.s1.eu.hivemq.cloud:8884/mqtt';
-const PRICING_API_URL = 'http://localhost:5000';
+const PRICING_API_URL = 'https://smart-energy-production-a08d.up.railway.app';
 
 const mqttOptions = {
   username: 'omeravi',
