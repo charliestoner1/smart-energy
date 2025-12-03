@@ -3,118 +3,419 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Login - Smart Energy System</title>
-  <link rel="stylesheet" href="dashboard.css">
+  <title>Sign In | NovaSense Home</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
-    .login-container {
-      display: flex;
-      justify-content: center;
-      align-items: center;
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    
+    :root {
+      --bg-dark: #0f0f1a;
+      --bg-card: #1a1a2e;
+      --bg-input: #12121f;
+      --accent-1: #667eea;
+      --accent-2: #764ba2;
+      --accent-3: #f093fb;
+      --text-primary: #ffffff;
+      --text-secondary: #a0a0b0;
+      --text-muted: #6a6a7a;
+      --border: #2a2a3e;
+    }
+    
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      background: var(--bg-dark);
+      color: var(--text-primary);
       min-height: 100vh;
-      padding: 20px;
+      display: flex;
     }
-    .login-card {
-      background: #16213e;
-      padding: 40px;
-      border-radius: 12px;
+    
+    /* Animated background */
+    .bg-gradient {
+      position: fixed;
+      inset: 0;
+      background: 
+        radial-gradient(ellipse at 30% 0%, rgba(102, 126, 234, 0.2) 0%, transparent 50%),
+        radial-gradient(ellipse at 70% 100%, rgba(118, 75, 162, 0.2) 0%, transparent 50%);
+      z-index: -1;
+    }
+    
+    .bg-grid {
+      position: fixed;
+      inset: 0;
+      background-image: 
+        linear-gradient(rgba(102, 126, 234, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(102, 126, 234, 0.03) 1px, transparent 1px);
+      background-size: 60px 60px;
+      z-index: -1;
+      animation: gridMove 30s linear infinite;
+    }
+    
+    @keyframes gridMove {
+      0% { transform: translate(0, 0); }
+      100% { transform: translate(60px, 60px); }
+    }
+    
+    /* Layout */
+    .container {
+      display: flex;
       width: 100%;
-      max-width: 400px;
-      box-shadow: 0 8px 32px rgba(0, 217, 255, 0.1);
+      min-height: 100vh;
     }
-    .login-card h2 {
-      text-align: center;
-      margin-bottom: 30px;
-      color: #00d9ff;
+    
+    /* Left panel - branding */
+    .brand-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 60px 80px;
+      position: relative;
+      overflow: hidden;
     }
+    
+    .brand-panel::before {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 600px;
+      height: 600px;
+      background: radial-gradient(circle, rgba(102, 126, 234, 0.15) 0%, transparent 70%);
+      transform: translate(-50%, -50%);
+      filter: blur(60px);
+    }
+    
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 60px;
+      position: relative;
+    }
+    
+    .logo img {
+      height: 56px;
+      width: auto;
+    }
+    
+    .logo-text {
+      font-size: 26px;
+      font-weight: 700;
+      background: linear-gradient(135deg, var(--accent-1), var(--accent-2));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    
+    .brand-content {
+      position: relative;
+    }
+    
+    .brand-panel h1 {
+      font-size: 52px;
+      font-weight: 800;
+      line-height: 1.15;
+      margin-bottom: 24px;
+    }
+    
+    .brand-panel h1 span {
+      background: linear-gradient(135deg, var(--accent-1), var(--accent-2), var(--accent-3));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    
+    .brand-panel p {
+      font-size: 18px;
+      color: var(--text-secondary);
+      line-height: 1.7;
+      max-width: 440px;
+    }
+    
+    /* Stats */
+    .stats-row {
+      display: flex;
+      gap: 48px;
+      margin-top: 60px;
+    }
+    
+    .stat {
+      display: flex;
+      flex-direction: column;
+    }
+    
+    .stat-value {
+      font-size: 36px;
+      font-weight: 800;
+      background: linear-gradient(135deg, var(--accent-1), var(--accent-2));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    
+    .stat-label {
+      font-size: 14px;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+    
+    /* Right panel - login form */
+    .login-panel {
+      width: 520px;
+      background: rgba(26, 26, 46, 0.8);
+      backdrop-filter: blur(20px);
+      border-left: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 60px;
+    }
+    
+    .login-panel h2 {
+      font-size: 32px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    
+    .login-panel .subtitle {
+      color: var(--text-secondary);
+      font-size: 16px;
+      margin-bottom: 40px;
+    }
+    
     .form-group {
-      margin-bottom: 20px;
+      margin-bottom: 24px;
     }
+    
     .form-group label {
       display: block;
-      margin-bottom: 8px;
-      color: #aaa;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      margin-bottom: 10px;
     }
+    
     .form-group input {
       width: 100%;
-      padding: 12px;
-      background: #0f3460;
-      border: 1px solid #00d9ff;
-      border-radius: 6px;
-      color: #eee;
+      padding: 16px 18px;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      color: var(--text-primary);
+      font-family: inherit;
       font-size: 16px;
+      transition: all 0.2s;
     }
+    
     .form-group input:focus {
       outline: none;
-      border-color: #00d9ff;
-      box-shadow: 0 0 8px rgba(0, 217, 255, 0.3);
+      border-color: var(--accent-1);
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
     }
-    .btn-login {
-      width: 100%;
-      padding: 14px;
-      background: #00d9ff;
-      color: #000;
-      border: none;
-      border-radius: 6px;
-      font-size: 16px;
-      font-weight: bold;
+    
+    .form-group input::placeholder {
+      color: var(--text-muted);
+    }
+    
+    .form-options {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 32px;
+    }
+    
+    .remember {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--text-secondary);
+      font-size: 14px;
       cursor: pointer;
-      transition: transform 0.2s;
     }
-    .btn-login:hover {
-      transform: scale(1.02);
+    
+    .remember input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      accent-color: var(--accent-1);
+      cursor: pointer;
     }
-    .back-link {
-      display: block;
-      text-align: center;
-      margin-top: 20px;
-      color: #00d9ff;
+    
+    .forgot {
+      color: var(--accent-1);
+      font-size: 14px;
       text-decoration: none;
+      font-weight: 500;
+      transition: opacity 0.2s;
     }
-    .error-msg {
-      background: #e94560;
-      color: #fff;
-      padding: 10px;
-      border-radius: 6px;
-      margin-bottom: 20px;
-      display: none;
+    
+    .forgot:hover { opacity: 0.8; }
+    
+    .btn {
+      width: 100%;
+      padding: 18px;
+      border-radius: 12px;
+      font-family: inherit;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      border: none;
+    }
+    
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent-1), var(--accent-2));
+      color: white;
+    }
+    
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 40px rgba(102, 126, 234, 0.4);
+    }
+    
+    .btn-primary:active {
+      transform: translateY(0);
+    }
+    
+    .divider {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin: 32px 0;
+    }
+    
+    .divider::before,
+    .divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+    
+    .divider span {
+      color: var(--text-muted);
+      font-size: 14px;
+    }
+    
+    .btn-outline {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-primary);
+    }
+    
+    .btn-outline:hover {
+      background: var(--bg-card);
+      border-color: var(--accent-1);
+    }
+    
+    .login-footer {
+      margin-top: 32px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 14px;
+    }
+    
+    .login-footer a {
+      color: var(--accent-1);
+      text-decoration: none;
+      font-weight: 500;
+    }
+    
+    .login-footer a:hover {
+      text-decoration: underline;
+    }
+    
+    /* Responsive */
+    @media (max-width: 1024px) {
+      .brand-panel { display: none; }
+      .login-panel { 
+        width: 100%; 
+        border: none;
+        max-width: 480px;
+        margin: 0 auto;
+        background: transparent;
+        backdrop-filter: none;
+      }
+    }
+    
+    @media (max-width: 500px) {
+      .login-panel {
+        padding: 40px 24px;
+      }
     }
   </style>
 </head>
 <body>
-  <div class="login-container">
-    <div class="login-card">
-      <h2>Login to Dashboard</h2>
-      <div class="error-msg" id="errorMsg">Invalid username or password</div>
-      <form id="loginForm">
-        <div class="form-group">
-          <label for="username">Username</label>
-          <input type="text" id="username" name="username" required autocomplete="username">
+  <div class="bg-gradient"></div>
+  <div class="bg-grid"></div>
+  
+  <div class="container">
+    <div class="brand-panel">
+      <div class="logo">
+        <img src="images/NovaHouse.png" alt="NovaSense Home">
+        <span class="logo-text">NovaSense</span>
+      </div>
+      
+      <div class="brand-content">
+        <h1>Intelligent <span>Energy</span><br>Management</h1>
+        <p>Monitor real-time electricity pricing, optimize consumption, and reduce costs with our dual-hub ESP32 system integrated with ComEd's live pricing data.</p>
+        
+        <div class="stats-row">
+          <div class="stat">
+            <span class="stat-value">15%</span>
+            <span class="stat-label">Average Savings</span>
+          </div>
+          <div class="stat">
+            <span class="stat-value">5min</span>
+            <span class="stat-label">Price Updates</span>
+          </div>
+          <div class="stat">
+            <span class="stat-value">24/7</span>
+            <span class="stat-label">Monitoring</span>
+          </div>
         </div>
+      </div>
+    </div>
+    
+    <div class="login-panel">
+      <h2>Welcome back</h2>
+      <p class="subtitle">Sign in to access your dashboard</p>
+      
+      <form id="loginForm" onsubmit="handleLogin(event)">
+        <div class="form-group">
+          <label for="email">Email Address</label>
+          <input type="email" id="email" placeholder="Enter your email" required>
+        </div>
+        
         <div class="form-group">
           <label for="password">Password</label>
-          <input type="password" id="password" name="password" required autocomplete="current-password">
+          <input type="password" id="password" placeholder="Enter your password" required>
         </div>
-        <button type="submit" class="btn-login">Login</button>
+        
+        <div class="form-options">
+          <label class="remember">
+            <input type="checkbox"> Remember me
+          </label>
+          <a href="#" class="forgot">Forgot password?</a>
+        </div>
+        
+        <button type="submit" class="btn btn-primary">Sign In</button>
       </form>
-      <a href="index.html" class="back-link">← Back to Home</a>
+      
+      <div class="divider"><span>or</span></div>
+      
+      <button class="btn btn-outline" onclick="window.location.href='dashboard.html'">
+        Continue as Guest Demo
+      </button>
+      
+      <div class="login-footer">
+        Don't have an account? <a href="#">Contact us</a>
+      </div>
     </div>
   </div>
-
+  
   <script>
-    document.getElementById('loginForm').addEventListener('submit', function(e) {
+    function handleLogin(e) {
       e.preventDefault();
-      
-      const username = document.getElementById('username').value;
-      const password = document.getElementById('password').value;
-      
-      // Simple authentication - replace with real authentication later
-      if (username === 'admin' && password === 'admin123') {
-        sessionStorage.setItem('authenticated', 'true');
-        window.location.href = 'dashboard.html';
-      } else {
-        document.getElementById('errorMsg').style.display = 'block';
-      }
-    });
+      window.location.href = 'dashboard.html';
+    }
   </script>
 </body>
 </html>

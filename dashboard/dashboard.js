@@ -1,6 +1,6 @@
-// dashboard.js
+// Configuration
 const BROKER_URL = 'wss://1e1a4e5c581e4bc3a697f8937d7fb9e4.s1.eu.hivemq.cloud:8884/mqtt';
-const PRICING_API_URL = 'http://localhost:5000';
+const PRICING_API_URL = 'https://smart-energy-production-a08d.up.railway.app';
 
 const mqttOptions = {
   username: 'omeravi',
@@ -13,292 +13,446 @@ const mqttOptions = {
 const TOPICS = {
   telemetry: 'sensors/room1/telemetry',
   control: 'control/room1/cmd',
-  alerts: 'alerts/room1/anomaly',
-  stateFan: 'control/room1/state/fan',
-  stateLamp: 'control/room1/state/lamp'
+  alerts: 'alerts/room1/anomaly'
 };
 
-const RATES = [
-  { block: 250, rate: 0.110 },
-  { block: 500, rate: 0.145 },
-  { block: Infinity, rate: 0.185 }
-];
-
-const TIER_INFO = {
-  0: { name: 'VERY LOW', color: '#00d9ff', class: 'tier-very_low' },
-  1: { name: 'LOW', color: '#51cf66', class: 'tier-low' },
-  2: { name: 'NORMAL', color: '#ffd43b', class: 'tier-normal' },
-  3: { name: 'HIGH', color: '#ff922b', class: 'tier-high' },
-  4: { name: 'VERY HIGH', color: '#ff6b6b', class: 'tier-very_high' },
-  5: { name: 'CRITICAL', color: '#e94560', class: 'tier-critical' }
-};
-
+// State
 let mqttClient = null;
 let overrideActive = false;
 let accumulatedWh = 0;
 let lastSampleTsMs = null;
 let currentPricingData = null;
-let currentEcoMode = true;
-let pricingUpdateInterval = null;
 
-const deviceStates = { fan: false, lamp: false, pir: false };
-let roomData = {
-  A: { temp: 0, humidity: 0, occupied: false, distance: -1 },
-  B: { temp: 0, humidity: 0, occupied: false, distance: -1 }
+const deviceStates = {
+  fanA: false, lampA: false, pirA: false,
+  fanB: false, lampB: false, pirB: false,
+  ecoMode: true
 };
 
-const powerData = { labels: [], datasets: [{ label: 'Power (W)', data: [], borderColor: '#00d9ff', tension: 0.35, pointRadius: 0 }] };
-const tempData = {
-  labels: [],
-  datasets: [
-    { label: 'Room A (°C)', data: [], borderColor: '#e94560', tension: 0.35, pointRadius: 0, yAxisID: 'y' },
-    { label: 'Room B (°C)', data: [], borderColor: '#ff922b', tension: 0.35, pointRadius: 0, yAxisID: 'y' },
-    { label: 'Humidity A (%)', data: [], borderColor: '#00d9ff', tension: 0.35, pointRadius: 0, yAxisID: 'y1' },
-    { label: 'Humidity B (%)', data: [], borderColor: '#3b82f6', tension: 0.35, pointRadius: 0, yAxisID: 'y1' }
-  ]
+// Chart configuration
+Chart.defaults.color = '#8a8a9a';
+Chart.defaults.borderColor = '#2a2a3a';
+
+const chartOptions = {
+  responsive: true,
+  maintainAspectRatio: true,
+  animation: false,
+  plugins: { legend: { display: false } },
+  scales: {
+    x: { grid: { display: false } },
+    y: { grid: { color: '#2a2a3a' } }
+  }
 };
-const pricingData = {
-  labels: [],
-  datasets: [{ label: 'Price (¢/kWh)', data: [], borderColor: '#ffd43b', backgroundColor: 'rgba(255, 212, 59, 0.1)', tension: 0.35, pointRadius: 2, fill: true }]
-};
 
-let powerChart, tempChart, pricingChart;
+// Initialize charts
+const powerChart = new Chart(document.getElementById('powerChart'), {
+  type: 'line',
+  data: {
+    labels: [],
+    datasets: [{
+      label: 'Power (W)',
+      data: [],
+      borderColor: '#667eea',
+      backgroundColor: '#667eea20',
+      tension: 0.4,
+      fill: true,
+      pointRadius: 0
+    }]
+  },
+  options: {
+    ...chartOptions,
+    scales: {
+      ...chartOptions.scales,
+      y: { ...chartOptions.scales.y, beginAtZero: true }
+    }
+  }
+});
 
-function initCharts() {
-  const opts = { responsive: true, maintainAspectRatio: true, animation: false };
-  
-  powerChart = new Chart(document.getElementById('powerChart'), {
-    type: 'line', data: powerData,
-    options: { ...opts, scales: { y: { beginAtZero: true, title: { display: true, text: 'Power (W)' } } } }
-  });
-  
-  tempChart = new Chart(document.getElementById('tempChart'), {
-    type: 'line', data: tempData,
-    options: { ...opts, scales: {
-      y: { position: 'left', title: { display: true, text: 'Temp (°C)' } },
-      y1: { position: 'right', title: { display: true, text: 'Humidity (%)' }, grid: { drawOnChartArea: false } }
-    }}
-  });
-  
-  pricingChart = new Chart(document.getElementById('pricingChart'), {
-    type: 'line', data: pricingData,
-    options: { ...opts, scales: {
-      y: { beginAtZero: true, title: { display: true, text: 'Price (¢/kWh)' }, ticks: { callback: v => v.toFixed(2) + '¢' } },
-      x: { title: { display: true, text: 'Time' } }
-    }}
-  });
-}
+const tempChart = new Chart(document.getElementById('tempChart'), {
+  type: 'line',
+  data: {
+    labels: [],
+    datasets: [
+      {
+        label: 'Room A',
+        data: [],
+        borderColor: '#667eea',
+        tension: 0.4,
+        pointRadius: 0
+      },
+      {
+        label: 'Room B',
+        data: [],
+        borderColor: '#f093fb',
+        tension: 0.4,
+        pointRadius: 0
+      }
+    ]
+  },
+  options: {
+    ...chartOptions,
+    plugins: {
+      legend: { display: true, position: 'top', labels: { boxWidth: 12 } }
+    }
+  }
+});
 
-function addDataPoint(chart, data, label, value) {
-  data.labels.push(label);
-  if (Array.isArray(value)) value.forEach((v, i) => data.datasets[i].data.push(v));
-  else data.datasets[0].data.push(value);
-  if (data.labels.length > 60) { data.labels.shift(); data.datasets.forEach(ds => ds.data.shift()); }
-  chart.update('none');
-}
+const pricingChart = new Chart(document.getElementById('pricingChart'), {
+  type: 'line',
+  data: {
+    labels: [],
+    datasets: [{
+      label: 'Price (¢/kWh)',
+      data: [],
+      borderColor: '#764ba2',
+      backgroundColor: '#764ba220',
+      tension: 0.4,
+      fill: true,
+      pointRadius: 2
+    }]
+  },
+  options: {
+    ...chartOptions,
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        callbacks: {
+          label: ctx => `${ctx.parsed.y.toFixed(2)}¢/kWh`
+        }
+      }
+    },
+    scales: {
+      x: { grid: { display: false } },
+      y: {
+        grid: { color: '#2a2a3a' },
+        ticks: { callback: v => v + '¢' }
+      }
+    }
+  }
+});
 
+// MQTT Connection
 function connectMQTT() {
   mqttClient = mqtt.connect(BROKER_URL, mqttOptions);
-  
+
   mqttClient.on('connect', () => {
-    setBrokerStatus(true);
-    fetchPricingData();
-    fetchPriceHistory();
-    pricingUpdateInterval = setInterval(fetchPricingData, 300000);
-    mqttClient.subscribe([TOPICS.telemetry, TOPICS.alerts, TOPICS.stateFan, TOPICS.stateLamp]);
+    updateConnectionStatus(true);
+    mqttClient.subscribe([TOPICS.telemetry, TOPICS.alerts]);
+    addAlert('info', 'Connected to MQTT broker');
   });
-  
-  mqttClient.on('reconnect', () => setBrokerStatus(false));
-  mqttClient.on('close', () => setBrokerStatus(false));
-  mqttClient.on('error', () => setBrokerStatus(false));
-  
+
+  mqttClient.on('reconnect', () => updateConnectionStatus(false));
+  mqttClient.on('close', () => updateConnectionStatus(false));
+  mqttClient.on('error', err => {
+    console.error('MQTT error:', err);
+    updateConnectionStatus(false);
+  });
+
   mqttClient.on('message', (topic, payload) => {
-    let data;
-    try { data = JSON.parse(payload.toString()); } catch { return; }
-    if (topic === TOPICS.telemetry) handleTelemetry(data);
-    else if (topic === TOPICS.alerts) handleAlert(data);
-    else if (topic === TOPICS.stateFan) handleStateEcho('fan', data);
-    else if (topic === TOPICS.stateLamp) handleStateEcho('lamp', data);
+    try {
+      const data = JSON.parse(payload.toString());
+      if (topic === TOPICS.telemetry) handleTelemetry(data);
+      else if (topic === TOPICS.alerts) handleAlert(data);
+    } catch (e) { /* ignore invalid JSON */ }
   });
 }
 
-function setBrokerStatus(connected) {
-  const el = document.getElementById('statusBroker');
-  el.textContent = connected ? 'Broker: Connected' : 'Broker: Disconnected';
-  el.classList.toggle('active', connected);
+function updateConnectionStatus(connected) {
+  const el = document.getElementById('connectionStatus');
+  el.className = 'connection-status' + (connected ? ' connected' : '');
+  el.querySelector('span:last-child').textContent = connected ? 'Connected' : 'Connecting...';
 }
 
+// Telemetry handling
 function handleTelemetry(d) {
-  const timeLabel = new Date().toLocaleTimeString();
-  const tempA = d.tC_A ?? d.tC ?? 0, tempB = d.tC_B ?? d.tC ?? 0;
-  const humidA = d.rh_A ?? d.rh ?? 0, humidB = d.rh_B ?? d.rh ?? 0;
-  const occA = d.occ_A ?? (d.pir === 1), occB = d.occ_B ?? false;
-  
-  roomData.A = { temp: tempA, humidity: humidA, occupied: occA, distance: d.dist_A ?? -1 };
-  roomData.B = { temp: tempB, humidity: humidB, occupied: occB, distance: d.dist_B ?? -1 };
-  currentEcoMode = d.eco_mode === 1;
-  updateModeDisplay();
-  if (d.price_cents !== undefined) updatePricingFromTelemetry(d);
-  
-  const voltage = d.voltage ?? 120, amps = d.amps ?? 0;
+  const tsMs = d.ts > 1e12 ? d.ts : d.ts * 1000;
+  const timeLabel = new Date(tsMs).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+
+  // Power calculation
+  const voltage = d.voltage || 120;
+  const amps = d.amps || 0;
   const powerW = +(voltage * amps).toFixed(1);
-  addDataPoint(powerChart, powerData, timeLabel, powerW);
-  addDataPoint(tempChart, tempData, timeLabel, [tempA, tempB, humidA, humidB]);
+  addDataPoint(powerChart, timeLabel, powerW);
+
+  // Temperature (Room A and B)
+  const tempA = d.tC_A !== undefined ? d.tC_A : (d.tC || null);
+  const tempB = d.tC_B !== undefined ? d.tC_B : null;
   
-  deviceStates.pir = occA || occB;
-  updateOccupancyStatus();
-  
-  const tsMs = d.ts ?? Date.now();
-  if (lastSampleTsMs != null && tsMs > lastSampleTsMs) accumulatedWh += powerW * ((tsMs - lastSampleTsMs) / 3600000);
+  if (tempA !== null) {
+    document.getElementById('tempA').textContent = tempA.toFixed(1) + '°C';
+    tempChart.data.datasets[0].data.push(tempA);
+  }
+  if (tempB !== null) {
+    document.getElementById('tempB').textContent = tempB.toFixed(1) + '°C';
+    tempChart.data.datasets[1].data.push(tempB);
+  }
+  tempChart.data.labels.push(timeLabel);
+  trimChartData(tempChart, 60);
+  tempChart.update('none');
+
+  // Humidity
+  if (d.rh_A !== undefined) document.getElementById('humidityA').textContent = d.rh_A.toFixed(0) + '%';
+  if (d.rh_B !== undefined) document.getElementById('humidityB').textContent = d.rh_B.toFixed(0) + '%';
+  if (d.rh !== undefined) {
+    document.getElementById('humidityA').textContent = d.rh.toFixed(0) + '%';
+  }
+
+  // Occupancy
+  updateOccupancy('A', d.pirA || d.pir);
+  updateOccupancy('B', d.pirB);
+
+  // Mode
+  if (d.ecoMode !== undefined) {
+    deviceStates.ecoMode = d.ecoMode;
+    updateModeDisplay();
+  }
+
+  // Cost calculation
+  if (lastSampleTsMs != null && tsMs > lastSampleTsMs) {
+    const dtHours = (tsMs - lastSampleTsMs) / 3600000;
+    accumulatedWh += powerW * dtHours;
+  }
   lastSampleTsMs = tsMs;
   updateProjectedCost();
-  updateRoomCards();
+}
+
+function updateOccupancy(room, occupied) {
+  const badge = document.getElementById('occupancy' + room);
+  const card = document.getElementById('room' + room);
+  
+  if (occupied) {
+    badge.className = 'occupancy-badge active';
+    badge.querySelector('span:last-child').textContent = 'Occupied';
+    card.classList.add('occupied');
+  } else {
+    badge.className = 'occupancy-badge';
+    badge.querySelector('span:last-child').textContent = 'Vacant';
+    card.classList.remove('occupied');
+  }
 }
 
 function updateModeDisplay() {
-  const el = document.getElementById('modeStatus');
-  if (el) {
-    el.textContent = currentEcoMode ? 'ECO MODE' : 'MANUAL MODE';
-    el.className = currentEcoMode ? 'mode-badge eco' : 'mode-badge manual';
-  }
-}
-
-function updateOccupancyStatus() {
-  const el = document.getElementById('statusPIR');
-  const occA = roomData.A.occupied, occB = roomData.B.occupied;
-  let status = 'Rooms: ';
-  if (occA && occB) status += 'A & B Occupied';
-  else if (occA) status += 'A Occupied';
-  else if (occB) status += 'B Occupied';
-  else status += 'All Empty';
-  el.textContent = status;
-  el.classList.toggle('active', occA || occB);
-}
-
-function updateRoomCards() {
-  const roomAEl = document.getElementById('roomAInfo');
-  const roomBEl = document.getElementById('roomBInfo');
-  if (roomAEl) roomAEl.innerHTML = `<strong>Room A</strong><br>Temp: ${roomData.A.temp.toFixed(1)}°C<br>Humidity: ${roomData.A.humidity.toFixed(0)}%<br>Status: ${roomData.A.occupied ? '🟢 Occupied' : '⚪ Empty'}`;
-  if (roomBEl) roomBEl.innerHTML = `<strong>Room B</strong><br>Temp: ${roomData.B.temp.toFixed(1)}°C<br>Humidity: ${roomData.B.humidity.toFixed(0)}%<br>Status: ${roomData.B.occupied ? '🟢 Occupied' : '⚪ Empty'}`;
-}
-
-function updatePricingFromTelemetry(d) {
-  const tier = d.price_tier ?? 2;
-  const tierInfo = TIER_INFO[tier];
-  const pricingDiv = document.getElementById('pricingInfo');
-  if (pricingDiv) {
-    pricingDiv.innerHTML = `<strong>Price:</strong> ${(d.price_cents ?? 0).toFixed(2)}¢/kWh<br><strong>Tier:</strong> <span style="color: ${tierInfo.color}">${tierInfo.name}</span><br><strong>Action:</strong> ${d.price_action ?? 'normal'}<br><strong>Mode:</strong> ${currentEcoMode ? '🌿 ECO' : '🔧 MANUAL'}`;
-    pricingDiv.className = 'pricing-info ' + tierInfo.class;
-  }
-}
-
-function handleAlert(d) {
-  const div = document.getElementById('alerts');
-  div.innerHTML = `<div class="alert-item">⚠️ ${d.message || 'Anomaly detected'}</div>` + div.innerHTML;
-}
-
-function publishCmd(device, action, reason = 'manual') {
-  if (!mqttClient || !mqttClient.connected) { alert('Broker not connected'); return; }
-  mqttClient.publish(TOPICS.control, JSON.stringify({ device, action, reason }));
-}
-
-function sendCommand(device, action) {
-  if (overrideActive) { alert('Override active'); return; }
-  if (currentEcoMode) { alert('System in ECO mode - devices controlled automatically'); return; }
-  publishCmd(device, action, 'dashboard-manual');
-  deviceStates[device] = action === 'on';
-  updateDeviceStatus(device);
-}
-
-function toggleOverride() {
-  overrideActive = !overrideActive;
-  const btn = document.getElementById('overrideBtn');
-  const banner = document.getElementById('overrideBanner');
-  if (overrideActive) {
-    publishCmd('fan', 'off', 'override');
-    publishCmd('lamp', 'off', 'override');
-    deviceStates.fan = false; deviceStates.lamp = false;
-    updateDeviceStatus('fan'); updateDeviceStatus('lamp');
-    btn.textContent = '✓ OVERRIDE ACTIVE — CLICK TO RESTORE';
-    btn.classList.add('active');
-    banner.style.display = 'block';
+  const badge = document.getElementById('modeBadge');
+  if (deviceStates.ecoMode) {
+    badge.className = 'mode-badge';
+    badge.innerHTML = '<span class="mode-icon">⚡</span><span class="mode-text">ECO MODE</span>';
   } else {
-    btn.textContent = '🚨 EMERGENCY OVERRIDE';
-    btn.classList.remove('active');
-    banner.style.display = 'none';
+    badge.className = 'mode-badge manual';
+    badge.innerHTML = '<span class="mode-icon">🔧</span><span class="mode-text">MANUAL MODE</span>';
   }
 }
 
-function handleStateEcho(device, payload) {
-  deviceStates[device] = !!payload.on;
-  updateDeviceStatus(device);
+// Chart helpers
+function addDataPoint(chart, label, value) {
+  chart.data.labels.push(label);
+  chart.data.datasets[0].data.push(value);
+  trimChartData(chart, 60);
+  chart.update('none');
 }
 
-function updateDeviceStatus(device) {
-  const el = document.getElementById(`status${device.charAt(0).toUpperCase()}${device.slice(1)}`);
-  const on = !!deviceStates[device];
-  el.textContent = `${device.charAt(0).toUpperCase()}${device.slice(1)}: ${on ? 'ON' : 'OFF'}`;
-  el.classList.toggle('active', on);
+function trimChartData(chart, max) {
+  if (chart.data.labels.length > max) {
+    chart.data.labels.shift();
+    chart.data.datasets.forEach(ds => ds.data.shift());
+  }
+}
+
+// Pricing
+async function fetchPricingData() {
+  try {
+    const [currentRes, statsRes] = await Promise.all([
+      fetch(`${PRICING_API_URL}/api/price/current`),
+      fetch(`${PRICING_API_URL}/api/price/stats?hours=24`)
+    ]);
+
+    if (currentRes.ok) {
+      currentPricingData = await currentRes.json();
+      updatePricingDisplay();
+    }
+
+    if (statsRes.ok) {
+      const stats = await statsRes.json();
+      document.getElementById('avgPrice').textContent = stats.avg_price.toFixed(1) + '¢';
+      document.getElementById('priceRange').textContent = `${stats.min_price.toFixed(1)} - ${stats.max_price.toFixed(1)}¢`;
+    }
+  } catch (err) {
+    console.error('Pricing fetch error:', err);
+  }
+}
+
+async function fetchPriceHistory() {
+  try {
+    const res = await fetch(`${PRICING_API_URL}/api/price/history?hours=6`);
+    if (!res.ok) return;
+
+    const data = await res.json();
+    pricingChart.data.labels = [];
+    pricingChart.data.datasets[0].data = [];
+
+    data.data.reverse().forEach(record => {
+      const time = new Date(record.millisUTC).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+      pricingChart.data.labels.push(time);
+      pricingChart.data.datasets[0].data.push(record.price_cents_per_kwh);
+    });
+
+    pricingChart.update('none');
+  } catch (err) {
+    console.error('Price history error:', err);
+  }
+}
+
+function updatePricingDisplay() {
+  if (!currentPricingData) return;
+
+  const price = currentPricingData.price_cents_per_kwh;
+  const tier = currentPricingData.tier;
+  const rec = currentPricingData.recommendation;
+
+  document.getElementById('currentPrice').textContent = price.toFixed(1);
+  
+  const heroEl = document.getElementById('pricingHero');
+  heroEl.className = 'pricing-hero tier-' + tier;
+
+  const tierBadge = document.querySelector('.tier-badge');
+  tierBadge.className = 'tier-badge ' + tier;
+  tierBadge.textContent = tier.replace('_', ' ').toUpperCase();
+
+  document.getElementById('tierMessage').textContent = rec.message;
+  document.getElementById('recommendation').textContent = rec.action.toUpperCase();
+
+  // Add to chart
+  const timeLabel = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+  addDataPoint(pricingChart, timeLabel, price);
+
+  updateProjectedCost();
 }
 
 function updateProjectedCost() {
   const kWh = accumulatedWh / 1000;
   let cost;
-  if (currentPricingData && currentPricingData.price_cents_per_kwh) {
+  
+  if (currentPricingData) {
     cost = kWh * (currentPricingData.price_cents_per_kwh / 100);
   } else {
-    let remaining = kWh; cost = 0;
-    for (const tier of RATES) { const block = Math.min(remaining, tier.block); cost += block * tier.rate; remaining -= block; if (remaining <= 0) break; }
+    // Fallback GRU rates
+    const rates = [
+      { block: 250, rate: 0.110 },
+      { block: 500, rate: 0.145 },
+      { block: Infinity, rate: 0.185 }
+    ];
+    cost = 0;
+    let remaining = kWh;
+    for (const tier of rates) {
+      const block = Math.min(remaining, tier.block);
+      cost += block * tier.rate;
+      remaining -= block;
+      if (remaining <= 0) break;
+    }
   }
+
   document.getElementById('projectedCost').textContent = cost.toFixed(2);
 }
 
-async function fetchPricingData() {
-  try {
-    const response = await fetch(`${PRICING_API_URL}/api/price/current`);
-    if (response.ok) {
-      currentPricingData = await response.json();
-      updatePricingDisplay();
-      updateProjectedCost();
-    }
-  } catch (error) { console.error('Pricing fetch error:', error); }
-}
-
-function updatePricingDisplay() {
-  if (!currentPricingData) return;
-  const price = currentPricingData.price_cents_per_kwh;
-  const tier = currentPricingData.tier;
-  const rec = currentPricingData.recommendation;
-  const tierNum = { 'very_low': 0, 'low': 1, 'normal': 2, 'high': 3, 'very_high': 4, 'critical': 5 }[tier] ?? 2;
-  const tierInfo = TIER_INFO[tierNum];
-  
-  const pricingDiv = document.getElementById('pricingInfo');
-  if (pricingDiv) {
-    pricingDiv.innerHTML = `<strong>Price:</strong> ${price.toFixed(2)}¢/kWh<br><strong>Tier:</strong> <span style="color: ${tierInfo.color}">${tierInfo.name}</span><br><strong>Action:</strong> ${rec.action}<br><strong>Suggestion:</strong> ${rec.message}<br><strong>Mode:</strong> ${currentEcoMode ? '🌿 ECO' : '🔧 MANUAL'}`;
-    pricingDiv.className = 'pricing-info ' + tierInfo.class;
+// Controls
+function sendCommand(device, action) {
+  if (overrideActive) {
+    addAlert('warning', 'Manual override is active. Deactivate to control devices.');
+    return;
   }
-  addDataPoint(pricingChart, pricingData, new Date(currentPricingData.timestamp).toLocaleTimeString(), price);
+
+  if (!mqttClient?.connected) {
+    addAlert('warning', 'Not connected to broker');
+    return;
+  }
+
+  mqttClient.publish(TOPICS.control, JSON.stringify({ device, action, reason: 'manual' }));
+  
+  // Update local state
+  deviceStates[device] = action === 'on';
+  updateDeviceStatus(device);
+  addAlert('info', `${device} turned ${action.toUpperCase()}`);
 }
 
-async function fetchPriceHistory() {
-  try {
-    const response = await fetch(`${PRICING_API_URL}/api/price/history?hours=6`);
-    if (response.ok) {
-      const data = await response.json();
-      pricingData.labels = []; pricingData.datasets[0].data = [];
-      data.data.reverse().forEach(r => {
-        pricingData.labels.push(new Date(r.millisUTC).toLocaleTimeString());
-        pricingData.datasets[0].data.push(r.price_cents_per_kwh);
-      });
-      pricingChart.update('none');
-    }
-  } catch (error) { console.error('Price history error:', error); }
+function updateDeviceStatus(device) {
+  const statusEl = document.getElementById('status' + device.charAt(0).toUpperCase() + device.slice(1));
+  if (statusEl) {
+    const on = deviceStates[device];
+    statusEl.textContent = on ? 'ON' : 'OFF';
+    statusEl.className = 'control-status' + (on ? ' on' : '');
+  }
 }
 
-document.addEventListener('DOMContentLoaded', () => { initCharts(); connectMQTT(); });
+function toggleOverride() {
+  overrideActive = !overrideActive;
+  
+  const btn = document.getElementById('overrideBtn');
+  const banner = document.getElementById('overrideBanner');
 
+  if (overrideActive) {
+    // Turn everything off
+    ['fanA', 'lampA', 'fanB', 'lampB'].forEach(device => {
+      if (mqttClient?.connected) {
+        mqttClient.publish(TOPICS.control, JSON.stringify({ device, action: 'off', reason: 'override' }));
+      }
+      deviceStates[device] = false;
+      updateDeviceStatus(device);
+    });
+
+    btn.classList.add('active');
+    banner.classList.add('active');
+    addAlert('danger', 'EMERGENCY OVERRIDE ACTIVATED - All devices disabled');
+  } else {
+    btn.classList.remove('active');
+    banner.classList.remove('active');
+    addAlert('info', 'Override deactivated - Normal operation restored');
+  }
+}
+
+// Alerts
+function handleAlert(data) {
+  addAlert('warning', data.message || 'Anomaly detected');
+}
+
+function addAlert(type, message) {
+  const alertsList = document.getElementById('alerts');
+  const time = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+  
+  const icons = {
+    info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>',
+    warning: '<path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>',
+    danger: '<circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/>'
+  };
+
+  const alertHtml = `
+    <div class="alert-item ${type}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${icons[type]}</svg>
+      <span>${message}</span>
+      <span class="alert-time">${time}</span>
+    </div>
+  `;
+
+  alertsList.insertAdjacentHTML('afterbegin', alertHtml);
+
+  // Keep only last 10 alerts
+  while (alertsList.children.length > 10) {
+    alertsList.removeChild(alertsList.lastChild);
+  }
+}
+
+function clearAlerts() {
+  document.getElementById('alerts').innerHTML = '';
+  addAlert('info', 'Alerts cleared');
+}
+
+// Initialize
+connectMQTT();
+fetchPricingData();
+fetchPriceHistory();
+
+// Update pricing every 5 minutes
+setInterval(fetchPricingData, 300000);
+
+// Expose functions globally
 window.sendCommand = sendCommand;
 window.toggleOverride = toggleOverride;
-window.mqttClient = mqttClient;
-window.fetchPricingData = fetchPricingData;
-window.fetchPriceHistory = fetchPriceHistory;
+window.clearAlerts = clearAlerts;
