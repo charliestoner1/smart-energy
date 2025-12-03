@@ -82,9 +82,20 @@
         <p class="header-subtitle">Real-time energy monitoring</p>
       </div>
       <div class="header-right">
-        <div class="mode-badge" id="modeBadge">
-          <span class="mode-icon">⚡</span>
-          <span class="mode-text">ECO MODE</span>
+        <!-- Mode Toggle Switch -->
+        <div class="mode-toggle" id="modeToggle">
+          <button class="mode-toggle-btn active" id="ecoModeBtn" onclick="setMode('eco')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 2a10 10 0 1 0 10 10 4 4 0 0 1-5-5 4 4 0 0 1-5-5"/>
+            </svg>
+            <span>Eco</span>
+          </button>
+          <button class="mode-toggle-btn" id="manualModeBtn" onclick="setMode('manual')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+            </svg>
+            <span>Manual</span>
+          </button>
         </div>
         <button class="btn-override" id="overrideBtn" onclick="toggleOverride()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -101,6 +112,12 @@
         <path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
       </svg>
       MANUAL OVERRIDE ACTIVE — ALL AUTOMATION DISABLED
+    </div>
+    
+    <!-- Mode Info Banner -->
+    <div class="mode-info-banner" id="modeInfoBanner">
+      <span class="mode-info-icon">🌿</span>
+      <span class="mode-info-text" id="modeInfoText">Eco Mode: Automatic control based on electricity pricing and occupancy</span>
     </div>
     
     <!-- Pricing Hero Card -->
@@ -166,22 +183,29 @@
             </div>
           </div>
         </div>
-        <div class="room-controls">
+        <div class="room-controls" id="controlsRoomA">
           <div class="control-item">
             <span class="control-label">Fan</span>
             <div class="control-buttons">
-              <button class="btn-control" onclick="sendCommand('fanA','on')">ON</button>
-              <button class="btn-control off" onclick="sendCommand('fanA','off')">OFF</button>
+              <button class="btn-control" id="fanAOnBtn" onclick="sendCommand('fanA','on')">ON</button>
+              <button class="btn-control off" id="fanAOffBtn" onclick="sendCommand('fanA','off')">OFF</button>
             </div>
             <span class="control-status" id="statusFanA">OFF</span>
           </div>
           <div class="control-item">
             <span class="control-label">Light</span>
             <div class="control-buttons">
-              <button class="btn-control" onclick="sendCommand('lampA','on')">ON</button>
-              <button class="btn-control off" onclick="sendCommand('lampA','off')">OFF</button>
+              <button class="btn-control" id="lampAOnBtn" onclick="sendCommand('lampA','on')">ON</button>
+              <button class="btn-control off" id="lampAOffBtn" onclick="sendCommand('lampA','off')">OFF</button>
             </div>
             <span class="control-status" id="statusLampA">OFF</span>
+          </div>
+        </div>
+        <!-- Eco Mode Overlay -->
+        <div class="eco-overlay" id="ecoOverlayA">
+          <div class="eco-overlay-content">
+            <span class="eco-overlay-icon">🌿</span>
+            <span class="eco-overlay-text">Auto Control Active</span>
           </div>
         </div>
       </div>
@@ -214,22 +238,29 @@
             </div>
           </div>
         </div>
-        <div class="room-controls">
+        <div class="room-controls" id="controlsRoomB">
           <div class="control-item">
             <span class="control-label">Fan</span>
             <div class="control-buttons">
-              <button class="btn-control" onclick="sendCommand('fanB','on')">ON</button>
-              <button class="btn-control off" onclick="sendCommand('fanB','off')">OFF</button>
+              <button class="btn-control" id="fanBOnBtn" onclick="sendCommand('fanB','on')">ON</button>
+              <button class="btn-control off" id="fanBOffBtn" onclick="sendCommand('fanB','off')">OFF</button>
             </div>
             <span class="control-status" id="statusFanB">OFF</span>
           </div>
           <div class="control-item">
             <span class="control-label">Light</span>
             <div class="control-buttons">
-              <button class="btn-control" onclick="sendCommand('lampB','on')">ON</button>
-              <button class="btn-control off" onclick="sendCommand('lampB','off')">OFF</button>
+              <button class="btn-control" id="lampBOnBtn" onclick="sendCommand('lampB','on')">ON</button>
+              <button class="btn-control off" id="lampBOffBtn" onclick="sendCommand('lampB','off')">OFF</button>
             </div>
             <span class="control-status" id="statusLampB">OFF</span>
+          </div>
+        </div>
+        <!-- Eco Mode Overlay -->
+        <div class="eco-overlay" id="ecoOverlayB">
+          <div class="eco-overlay-content">
+            <span class="eco-overlay-icon">🌿</span>
+            <span class="eco-overlay-text">Auto Control Active</span>
           </div>
         </div>
       </div>
