@@ -1,6 +1,6 @@
 /*
   Sensor Hub - Smart Energy System
-  Pins: HC-SR04 A (21/34), B (22/35), DHT22 A (27), B (33), Mode Button (14)
+  Pins: HC-SR04 A (21/34), B (22/35), DHT11 A (27), B (33), Mode Button (14)
   NRF24L01+: CE=4, CSN=5
 */
 
@@ -14,9 +14,9 @@
 #include <ArduinoJson.h>
 
 // WiFi & API - UPDATE THESE
-const char* WIFI_SSID = "YOUR_WIFI_SSID";
-const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
-const char* PRICING_API_URL = "http://YOUR_COMPUTER_IP:5000/api/price/esp32";
+const char* WIFI_SSID = "Omer iphone";
+const char* WIFI_PASSWORD = "omeromer1";
+const char* PRICING_API_URL = "https://smart-energy-production-a08d.up.railway.app/";
 
 // MQTT (HiveMQ Cloud)
 const char* MQTT_SERVER = "1e1a4e5c581e4bc3a697f8937d7fb9e4.s1.eu.hivemq.cloud";
@@ -27,7 +27,7 @@ const char* MQTT_PASSWORD = "Omeromer1!";
 // Pins
 const int TRIG_A = 21, ECHO_A = 34;
 const int TRIG_B = 22, ECHO_B = 35;
-const int DHT_PIN_A = 27, DHT_PIN_B = 33;
+const int DHT_PIN_A = 26, DHT_PIN_B = 25;
 const int MAIN_BUTTON = 14;
 const int STATUS_LED = 2;
 #define NRF_CE 4
@@ -35,11 +35,13 @@ const int STATUS_LED = 2;
 
 // Objects
 RF24 radio(NRF_CE, NRF_CSN);
-DHT dhtA(DHT_PIN_A, DHT22);
-DHT dhtB(DHT_PIN_B, DHT22);
+DHT dhtA(DHT_PIN_A, DHT11);
+DHT dhtB(DHT_PIN_B, DHT11);
 WiFiClientSecure espClient;
 PubSubClient mqttClient(espClient);
 const byte PIPE_TX[6] = "SENS1";
+unsigned long lastDHTread = 0;
+
 
 struct Telemetry {
   uint32_t ms;
@@ -99,13 +101,16 @@ int16_t readDistanceCM(int trig, int echo) {
 }
 
 void readTemperatures() {
-  float tA = dhtA.readTemperature(), hA = dhtA.readHumidity();
-  float tB = dhtB.readTemperature(), hB = dhtB.readHumidity();
-  if (!isnan(tA)) tempA = tA;
-  if (!isnan(hA)) humidA = hA;
-  if (!isnan(tB)) tempB = tB;
-  if (!isnan(hB)) humidB = hB;
+  float tA = dhtA.readTemperature();
+  float hA = dhtA.readHumidity();
+  float tB = dhtB.readTemperature();
+  float hB = dhtB.readHumidity();
+  if (!isnan(tA) && tA > -20 && tA < 80) tempA = tA;
+  if (!isnan(hA) && hA >= 0 && hA <= 100) humidA = hA;
+  if (!isnan(tB) && tB > -20 && tB < 80) tempB = tB;
+  if (!isnan(hB) && hB >= 0 && hB <= 100) humidB = hB;
 }
+
 
 void checkMainButton() {
   bool current = digitalRead(MAIN_BUTTON);
@@ -235,8 +240,12 @@ void loop() {
   checkMainButton();
   distA = readDistanceCM(TRIG_A, ECHO_A);
   distB = readDistanceCM(TRIG_B, ECHO_B);
-  readTemperatures();
-  
+  if (millis() - lastDHTread > 2500) {   // read every 2.5 seconds only
+    readTemperatures();
+    lastDHTread = millis();
+    Serial.printf("TEMP A = %.2f C | HUM A = %.1f %% || TEMP B = %.2f C | HUM B = %.1f %%\n", tempA, humidA, tempB, humidB);
+  }
+
   if (now - lastPriceFetch >= PRICE_FETCH_INTERVAL || lastPriceFetch == 0) { fetchComedPricing(); lastPriceFetch = now; }
   if (now - lastNrfSend >= NRF_SEND_INTERVAL) { sendTelemetryNRF(); lastNrfSend = now; }
   if (now - lastMqttPublish >= MQTT_PUBLISH_INTERVAL) { publishMQTT(); lastMqttPublish = now; }

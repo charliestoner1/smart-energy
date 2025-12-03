@@ -26,7 +26,7 @@ struct Telemetry {
   int8_t tempOffset;
 };
 
-const int OCCUPIED_CUTOFF_CM = 150;
+const int OCCUPIED_CUTOFF_CM = 10;
 const int MIN_VALID_CM = 2, MAX_VALID_CM = 400;
 const unsigned long PACKET_TIMEOUT_MS = 10000;
 const unsigned long DEBOUNCE_MS = 200;

@@ -39,3 +39,9 @@ volumes/
 config.h
 credentials.h
 esp32_config.h
+
+# Repomix xml
+repomix-output.xml
+
+# Node.js
+node_modules/
