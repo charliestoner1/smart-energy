@@ -25,11 +25,12 @@ const TOPICS = {
 
 // State
 let mqttClient = null;
-let overrideActive = false;
 let accumulatedWh = 0;
 let lastSampleTsMs = null;
 let currentPricingData = null;
 let currentMode = 'eco';  // 'eco' or 'manual'
+let currentView = 'dashboard';  // 'dashboard', 'analytics', 'devices'
+const startTime = Date.now();  // For uptime tracking
 
 const deviceStates = {
   fanA: false, lampA: false, pirA: false,
@@ -141,11 +142,6 @@ const pricingChart = new Chart(document.getElementById('pricingChart'), {
 // ===== MODE SWITCHING =====
 
 function setMode(mode) {
-  if (overrideActive) {
-    addAlert('warning', 'Deactivate emergency override first to change modes.');
-    return;
-  }
-  
   currentMode = mode;
   
   // Update UI
@@ -184,20 +180,16 @@ function setMode(mode) {
 }
 
 function updateControlsState() {
-  const isManual = currentMode === 'manual' && !overrideActive;
+  const isManual = currentMode === 'manual';
   
-  // Get all control buttons
-  const controlButtons = [
-    'fanAOnBtn', 'fanAOffBtn', 'lampAOnBtn', 'lampAOffBtn',
-    'fanBOnBtn', 'fanBOffBtn', 'lampBOnBtn', 'lampBOffBtn'
-  ];
+  // Get all toggle buttons
+  const toggleButtons = ['fanABtn', 'lampABtn', 'fanBBtn', 'lampBBtn'];
   
   // Enable/disable buttons based on mode
-  controlButtons.forEach(id => {
+  toggleButtons.forEach(id => {
     const btn = document.getElementById(id);
     if (btn) {
       btn.disabled = !isManual;
-      btn.classList.toggle('disabled', !isManual);
     }
   });
   
@@ -205,15 +197,15 @@ function updateControlsState() {
   const ecoOverlayA = document.getElementById('ecoOverlayA');
   const ecoOverlayB = document.getElementById('ecoOverlayB');
   
-  if (ecoOverlayA) ecoOverlayA.classList.toggle('active', currentMode === 'eco' && !overrideActive);
-  if (ecoOverlayB) ecoOverlayB.classList.toggle('active', currentMode === 'eco' && !overrideActive);
+  if (ecoOverlayA) ecoOverlayA.classList.toggle('active', currentMode === 'eco');
+  if (ecoOverlayB) ecoOverlayB.classList.toggle('active', currentMode === 'eco');
   
   // Update room controls container opacity
   const controlsA = document.getElementById('controlsRoomA');
   const controlsB = document.getElementById('controlsRoomB');
   
-  if (controlsA) controlsA.classList.toggle('eco-disabled', currentMode === 'eco' && !overrideActive);
-  if (controlsB) controlsB.classList.toggle('eco-disabled', currentMode === 'eco' && !overrideActive);
+  if (controlsA) controlsA.classList.toggle('eco-disabled', currentMode === 'eco');
+  if (controlsB) controlsB.classList.toggle('eco-disabled', currentMode === 'eco');
 }
 
 function publishModeChange(mode) {
@@ -329,7 +321,10 @@ function handleTelemetry(d, room) {
   const humidity = d.rh !== undefined ? d.rh : null;
   
   if (temp !== null) {
-    document.getElementById('temp' + room).textContent = temp.toFixed(1) + '°C';
+    document.getElementById('temp' + room).textContent = temp.toFixed(1);
+    // Update thermostat dial
+    updateThermostat(room, temp);
+    
     // Add to chart - Room A is dataset 0, Room B is dataset 1
     const datasetIndex = room === 'A' ? 0 : 1;
     tempChart.data.datasets[datasetIndex].data.push(temp);
@@ -411,6 +406,42 @@ function updateOccupancy(room, occupied) {
     badge.innerHTML = '<span class="occupancy-dot"></span>Vacant';
     card.classList.remove('occupied');
   }
+}
+
+function updateThermostat(room, temp) {
+  const dial = document.getElementById('thermostat' + room);
+  const arc = document.getElementById('tempArc' + room);
+  
+  if (!dial || !arc) return;
+  
+  // Remove all temperature classes
+  dial.classList.remove('cold', 'cool', 'comfortable', 'warm', 'hot');
+  
+  // Add appropriate class based on temperature
+  // Ranges: cold <18, cool 18-21, comfortable 21-25, warm 25-28, hot >28
+  if (temp < 18) {
+    dial.classList.add('cold');
+  } else if (temp < 21) {
+    dial.classList.add('cool');
+  } else if (temp < 25) {
+    dial.classList.add('comfortable');
+  } else if (temp < 28) {
+    dial.classList.add('warm');
+  } else {
+    dial.classList.add('hot');
+  }
+  
+  // Update the arc based on temperature (10°C to 40°C range)
+  // Full arc = 534 (circumference), we show half = 267
+  // Map temp to arc: 10°C = minimal arc, 40°C = full half arc
+  const minTemp = 10;
+  const maxTemp = 40;
+  const normalizedTemp = Math.max(minTemp, Math.min(maxTemp, temp));
+  const tempPercent = (normalizedTemp - minTemp) / (maxTemp - minTemp);
+  
+  // Arc goes from 534 (no fill) to ~267 (half filled)
+  const arcOffset = 534 - (tempPercent * 267);
+  arc.style.strokeDashoffset = arcOffset;
 }
 
 // ===== CHART HELPERS =====
@@ -528,15 +559,16 @@ function updateProjectedCost() {
 
 // ===== CONTROLS =====
 
+function toggleDevice(device) {
+  const currentState = deviceStates[device];
+  const newAction = currentState ? 'off' : 'on';
+  sendCommand(device, newAction);
+}
+
 function sendCommand(device, action) {
   // Check if in Eco mode
-  if (currentMode === 'eco' && !overrideActive) {
+  if (currentMode === 'eco') {
     addAlert('warning', '🌿 Switch to Manual mode to control devices directly.');
-    return;
-  }
-  
-  if (overrideActive) {
-    addAlert('warning', 'Manual override is active. Deactivate to control devices.');
     return;
   }
 
@@ -567,48 +599,25 @@ function sendCommand(device, action) {
 }
 
 function updateDeviceStatus(device) {
-  const statusEl = document.getElementById('status' + device.charAt(0).toUpperCase() + device.slice(1));
-  if (statusEl) {
-    const on = deviceStates[device];
-    statusEl.textContent = on ? 'ON' : 'OFF';
-    statusEl.className = 'control-status' + (on ? ' on' : '');
-  }
-}
-
-function toggleOverride() {
-  overrideActive = !overrideActive;
+  // device is like 'fanA', 'lampB', etc.
+  const btn = document.getElementById(device + 'Btn');
+  if (!btn) return;
   
-  const btn = document.getElementById('overrideBtn');
-  const banner = document.getElementById('overrideBanner');
-
-  if (overrideActive) {
-    // Turn everything off in both rooms
-    if (mqttClient?.connected) {
-      // Room A
-      mqttClient.publish(TOPICS.controlA, JSON.stringify({ device: 'fan', action: 'off', reason: 'emergency_override' }));
-      mqttClient.publish(TOPICS.controlA, JSON.stringify({ device: 'lamp', action: 'off', reason: 'emergency_override' }));
-      // Room B
-      mqttClient.publish(TOPICS.controlB, JSON.stringify({ device: 'fan', action: 'off', reason: 'emergency_override' }));
-      mqttClient.publish(TOPICS.controlB, JSON.stringify({ device: 'lamp', action: 'off', reason: 'emergency_override' }));
-    }
-    
-    // Update local states
-    ['fanA', 'lampA', 'fanB', 'lampB'].forEach(device => {
-      deviceStates[device] = false;
-      updateDeviceStatus(device);
-    });
-
-    btn.classList.add('active');
-    banner.classList.add('active');
-    addAlert('danger', '🚨 EMERGENCY OVERRIDE ACTIVATED - All devices disabled');
+  const isOn = deviceStates[device];
+  const label = btn.querySelector('.toggle-label');
+  
+  if (isOn) {
+    btn.classList.add('on');
+    if (label) label.textContent = 'ON';
   } else {
-    btn.classList.remove('active');
-    banner.classList.remove('active');
-    addAlert('info', '✓ Override deactivated - Normal operation restored');
+    btn.classList.remove('on');
+    if (label) label.textContent = 'OFF';
   }
   
-  // Update controls state (they should be disabled during override regardless of mode)
-  updateControlsState();
+  // Add light-btn class for lamp buttons (different color when on)
+  if (device.startsWith('lamp')) {
+    btn.classList.add('light-btn');
+  }
 }
 
 // ===== ALERTS =====
@@ -655,6 +664,94 @@ document.addEventListener('DOMContentLoaded', () => {
   updateControlsState();
 });
 
+// ===== VIEW SWITCHING =====
+function switchView(view) {
+  currentView = view;
+  
+  // Hide all views
+  document.getElementById('dashboardView').classList.add('hidden');
+  document.getElementById('analyticsView').classList.add('hidden');
+  document.getElementById('devicesView').classList.add('hidden');
+  
+  // Show selected view
+  document.getElementById(view + 'View').classList.remove('hidden');
+  
+  // Update nav items
+  document.getElementById('navDashboard').classList.remove('active');
+  document.getElementById('navAnalytics').classList.remove('active');
+  document.getElementById('navDevices').classList.remove('active');
+  document.getElementById('nav' + view.charAt(0).toUpperCase() + view.slice(1)).classList.add('active');
+  
+  // Update header
+  const viewTitle = document.getElementById('viewTitle');
+  const viewSubtitle = document.getElementById('viewSubtitle');
+  const headerControls = document.getElementById('headerControls');
+  const modeInfoBanner = document.getElementById('modeInfoBanner');
+  
+  switch(view) {
+    case 'dashboard':
+      viewTitle.textContent = 'Dashboard';
+      viewSubtitle.textContent = 'Real-time energy monitoring';
+      headerControls.style.display = 'flex';
+      modeInfoBanner.style.display = 'flex';
+      break;
+    case 'analytics':
+      viewTitle.textContent = 'Analytics';
+      viewSubtitle.textContent = 'Historical data and consumption trends';
+      headerControls.style.display = 'none';
+      modeInfoBanner.style.display = 'none';
+      // Resize charts when view becomes visible
+      setTimeout(() => {
+        powerChart.resize();
+        tempChart.resize();
+        pricingChart.resize();
+      }, 50);
+      break;
+    case 'devices':
+      viewTitle.textContent = 'Devices';
+      viewSubtitle.textContent = 'Configure and monitor connected devices';
+      headerControls.style.display = 'none';
+      modeInfoBanner.style.display = 'none';
+      break;
+  }
+}
+
+// ===== UPTIME TRACKING =====
+function updateUptime() {
+  const elapsed = Date.now() - startTime;
+  const hours = Math.floor(elapsed / 3600000);
+  const minutes = Math.floor((elapsed % 3600000) / 60000);
+  const seconds = Math.floor((elapsed % 60000) / 1000);
+  
+  const uptimeStr = [
+    hours.toString().padStart(2, '0'),
+    minutes.toString().padStart(2, '0'),
+    seconds.toString().padStart(2, '0')
+  ].join(':');
+  
+  const uptimeEl = document.getElementById('systemUptime');
+  if (uptimeEl) {
+    uptimeEl.textContent = uptimeStr;
+  }
+}
+
+// ===== ANALYTICS STATS UPDATE =====
+function updateAnalyticsStats() {
+  // Update total energy
+  const kWh = accumulatedWh / 1000;
+  const totalEnergyEl = document.getElementById('totalEnergy');
+  if (totalEnergyEl) {
+    totalEnergyEl.textContent = kWh.toFixed(3) + ' kWh';
+  }
+  
+  // Update total cost
+  const totalCostEl = document.getElementById('totalCost');
+  if (totalCostEl && currentPricingData) {
+    const cost = kWh * (currentPricingData.price_cents_per_kwh / 100);
+    totalCostEl.textContent = '$' + cost.toFixed(2);
+  }
+}
+
 connectMQTT();
 fetchPricingData();
 fetchPriceHistory();
@@ -662,8 +759,18 @@ fetchPriceHistory();
 // Update pricing every 5 minutes
 setInterval(fetchPricingData, 300000);
 
+// Update uptime every second
+setInterval(updateUptime, 1000);
+
+// Update analytics stats every 10 seconds
+setInterval(updateAnalyticsStats, 10000);
+
 // Expose functions globally
 window.sendCommand = sendCommand;
-window.toggleOverride = toggleOverride;
+window.toggleDevice = toggleDevice;
 window.clearAlerts = clearAlerts;
 window.setMode = setMode;
+window.updateOccupancy = updateOccupancy;
+window.updateDeviceStatus = updateDeviceStatus;
+window.updateThermostat = updateThermostat;
+window.switchView = switchView;

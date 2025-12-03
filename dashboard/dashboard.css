@@ -38,6 +38,12 @@
   box-sizing: border-box;
 }
 
+/* Global SVG safety - prevent SVGs from expanding to fill container */
+svg:not(.thermostat-ring) {
+  max-width: 100%;
+  height: auto;
+}
+
 body {
   font-family: 'Space Grotesk', sans-serif;
   background: var(--bg-primary);
@@ -306,59 +312,116 @@ body {
   font-size: 18px;
 }
 
-.btn-override {
+/* ===== THERMOSTAT DIAL ===== */
+.thermostat-container {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 20px;
-  background: transparent;
-  border: 1px solid var(--danger);
-  border-radius: 10px;
-  color: var(--danger);
-  font-family: inherit;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
+  justify-content: center;
+  padding: 20px 0;
 }
 
-.btn-override svg {
-  width: 18px;
-  height: 18px;
+.thermostat-dial {
+  position: relative;
+  width: 160px;
+  height: 160px;
 }
 
-.btn-override:hover {
-  background: var(--danger);
-  color: white;
+.thermostat-ring {
+  width: 100%;
+  height: 100%;
+  filter: drop-shadow(0 0 10px rgba(102, 126, 234, 0.3));
 }
 
-.btn-override.active {
-  background: var(--danger);
-  color: white;
-  animation: pulse 1s infinite;
+.temp-arc {
+  transition: stroke-dashoffset 0.8s ease-out, stroke 0.5s ease;
 }
 
-/* Override Banner */
-.override-banner {
-  display: none;
+.thermostat-center {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  padding: 16px;
-  background: var(--danger);
-  border-radius: 12px;
-  margin-bottom: 24px;
+  width: 120px;
+  height: 120px;
+  background: var(--bg-card);
+  border-radius: 50%;
+  box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.3);
+}
+
+.thermostat-temp {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 36px;
   font-weight: 600;
-  animation: pulse 1s infinite;
+  color: var(--text-primary);
+  line-height: 1;
 }
 
-.override-banner svg {
-  width: 24px;
-  height: 24px;
+.thermostat-unit {
+  font-size: 14px;
+  color: var(--text-muted);
+  margin-top: 2px;
 }
 
-.override-banner.active {
+.thermostat-humidity {
   display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+  padding: 4px 10px;
+  background: var(--bg-secondary);
+  border-radius: 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.humidity-icon {
+  width: 12px;
+  height: 12px;
+  stroke: var(--accent);
+}
+
+/* Temperature-based colors for the dial */
+.thermostat-dial.cold .temp-arc {
+  stroke: #3b82f6;
+}
+
+.thermostat-dial.cold .thermostat-ring {
+  filter: drop-shadow(0 0 15px rgba(59, 130, 246, 0.5));
+}
+
+.thermostat-dial.cool .temp-arc {
+  stroke: #06b6d4;
+}
+
+.thermostat-dial.cool .thermostat-ring {
+  filter: drop-shadow(0 0 15px rgba(6, 182, 212, 0.5));
+}
+
+.thermostat-dial.comfortable .temp-arc {
+  stroke: #22c55e;
+}
+
+.thermostat-dial.comfortable .thermostat-ring {
+  filter: drop-shadow(0 0 15px rgba(34, 197, 94, 0.5));
+}
+
+.thermostat-dial.warm .temp-arc {
+  stroke: #f59e0b;
+}
+
+.thermostat-dial.warm .thermostat-ring {
+  filter: drop-shadow(0 0 15px rgba(245, 158, 11, 0.5));
+}
+
+.thermostat-dial.hot .temp-arc {
+  stroke: #ef4444;
+}
+
+.thermostat-dial.hot .thermostat-ring {
+  filter: drop-shadow(0 0 15px rgba(239, 68, 68, 0.5));
 }
 
 /* Pricing Hero */
@@ -602,39 +665,96 @@ body {
   gap: 8px;
 }
 
-.btn-control {
-  padding: 8px 16px;
-  background: var(--accent);
-  border: none;
-  border-radius: 6px;
-  color: var(--bg-primary);
+/* Toggle Button Styles */
+.btn-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 20px;
+  background: transparent;
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  color: var(--text-muted);
   font-family: inherit;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.25s ease;
+  margin-left: auto;
 }
 
-.btn-control:hover:not(:disabled) {
-  transform: translateY(-1px);
+.btn-toggle .toggle-icon {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.5;
+  transition: all 0.25s ease;
 }
 
-.btn-control:disabled,
-.btn-control.disabled {
+.btn-toggle .toggle-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.btn-toggle .toggle-label {
+  min-width: 28px;
+  text-align: center;
+}
+
+.btn-toggle:hover:not(:disabled) {
+  border-color: var(--text-secondary);
+  color: var(--text-secondary);
+}
+
+.btn-toggle:hover:not(:disabled) .toggle-icon {
+  opacity: 0.8;
+}
+
+/* Toggle Button ON State */
+.btn-toggle.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg-primary);
+  box-shadow: 0 0 20px rgba(102, 126, 234, 0.4);
+}
+
+.btn-toggle.on .toggle-icon {
+  opacity: 1;
+}
+
+.btn-toggle.on:hover:not(:disabled) {
+  background: var(--accent-2);
+  border-color: var(--accent-2);
+}
+
+/* Toggle Button Disabled State */
+.btn-toggle:disabled {
   opacity: 0.4;
   cursor: not-allowed;
-  transform: none !important;
 }
 
-.btn-control.off {
-  background: var(--bg-card);
-  color: var(--text-secondary);
-  border: 1px solid var(--border);
+/* Fan spinning animation when ON */
+.btn-toggle.on .toggle-icon svg {
+  animation: spin 2s linear infinite;
 }
 
-.btn-control.off:hover:not(:disabled) {
-  border-color: var(--danger);
-  color: var(--danger);
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Light glow effect when ON */
+.btn-toggle.on.light-btn {
+  background: var(--warning);
+  border-color: var(--warning);
+  box-shadow: 0 0 25px rgba(251, 191, 36, 0.5);
+}
+
+.btn-toggle.on.light-btn:hover:not(:disabled) {
+  background: #f59e0b;
+  border-color: #f59e0b;
 }
 
 .control-status {
@@ -815,6 +935,160 @@ canvas {
   }
 }
 
+/* ===== VIEW SWITCHING ===== */
+.view-container {
+  animation: fadeIn 0.3s ease;
+}
+
+.view-container.hidden {
+  display: none;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ===== ANALYTICS VIEW ===== */
+.analytics-header {
+  margin-bottom: 24px;
+}
+
+.analytics-header h2 {
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.analytics-subtitle {
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+/* Analytics Stats Grid */
+.analytics-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px;
+  margin-top: 24px;
+}
+
+.stat-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  transition: all 0.3s ease;
+  overflow: hidden;
+  max-height: 100px;
+}
+
+.stat-card:hover {
+  border-color: var(--accent);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+}
+
+.stat-icon {
+  width: 48px;
+  height: 48px;
+  min-width: 48px;
+  max-width: 48px;
+  min-height: 48px;
+  max-height: 48px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  overflow: hidden;
+  font-size: 24px;
+}
+
+.stat-icon.power {
+  background: rgba(251, 191, 36, 0.15);
+  color: var(--warning);
+}
+
+.stat-icon.cost {
+  background: rgba(102, 126, 234, 0.15);
+  color: var(--accent);
+}
+
+.stat-icon.savings {
+  background: rgba(16, 185, 129, 0.15);
+  color: var(--success);
+}
+
+.stat-icon.time {
+  background: rgba(168, 85, 247, 0.15);
+  color: #a855f7;
+}
+
+.stat-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.stat-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.stat-value {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* Placeholder Content for Devices View */
+.placeholder-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 20px;
+  text-align: center;
+  background: var(--bg-card);
+  border: 1px dashed var(--border-color);
+  border-radius: 16px;
+}
+
+.placeholder-icon {
+  width: 64px !important;
+  height: 64px !important;
+  max-width: 64px !important;
+  max-height: 64px !important;
+  color: var(--text-muted);
+  margin-bottom: 20px;
+  opacity: 0.5;
+}
+
+.placeholder-content h3 {
+  font-size: 20px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.placeholder-content p {
+  color: var(--text-muted);
+  font-size: 14px;
+  max-width: 300px;
+}
+
 @media (max-width: 900px) {
   .sidebar {
     transform: translateX(-100%);
@@ -865,16 +1139,29 @@ canvas {
     justify-content: center;
   }
   
-  .btn-override {
-    width: 100%;
-    justify-content: center;
-  }
-  
   .pricing-meta {
     grid-template-columns: repeat(2, 1fr);
   }
   
   .room-grid {
     grid-template-columns: 1fr;
+  }
+  
+  .analytics-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .thermostat-dial {
+    width: 140px;
+    height: 140px;
+  }
+  
+  .thermostat-center {
+    width: 100px;
+    height: 100px;
+  }
+  
+  .thermostat-temp {
+    font-size: 28px;
   }
 }

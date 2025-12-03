@@ -110,7 +110,7 @@ const unsigned long NRF_SEND_INTERVAL = 250;        // 250ms
 const unsigned long MQTT_PUBLISH_INTERVAL = 5000;   // 5 seconds
 const unsigned long PULSE_TIMEOUT_US = 30000;
 const int MIN_CM = 2, MAX_CM = 400;
-const int OCCUPANCY_THRESHOLD = 150;  // cm - closer than this = occupied
+const int OCCUPANCY_THRESHOLD = 10;  // cm - closer than this = occupied
 
 // ============ DISTANCE READING ============
 int16_t readSingleDistance(int trig, int echo) {
