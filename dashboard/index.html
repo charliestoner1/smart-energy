@@ -364,6 +364,19 @@
       .btn-large { width: 100%; text-align: center; }
       .stats { flex-direction: column; gap: 24px; }
     }
+    /* Hero Logo */
+    .hero-logo {
+      width: 120px;
+      height: 120px;
+      margin-bottom: 32px;
+      animation: float 3s ease-in-out infinite;
+      filter: drop-shadow(0 20px 40px rgba(102, 126, 234, 0.3));
+    }
+
+    @keyframes float {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-10px); }
+  }
   </style>
 </head>
 <body>
@@ -389,6 +402,7 @@
   </nav>
   
   <section class="hero">
+    <img src="images/NovaHouse.png" alt="NovaSense" class="hero-logo">
     <div class="hero-badge">Live ComEd Pricing Integration</div>
     
     <h1>Smarter Energy<br><span>for Modern Living</span></h1>
