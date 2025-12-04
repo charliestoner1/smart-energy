@@ -79,6 +79,9 @@
     }
     
     .nav-links {
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
       display: flex;
       gap: 40px;
     }
@@ -365,18 +368,39 @@
       .stats { flex-direction: column; gap: 24px; }
     }
     /* Hero Logo */
+    .hero-main {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 25px;
+      margin-bottom: 24px;
+    }
+
     .hero-logo {
-      width: 120px;
-      height: 120px;
-      margin-bottom: 32px;
-      animation: float 3s ease-in-out infinite;
+      width: 260px;
+      height: auto;
+      flex-shrink: 0;
       filter: drop-shadow(0 20px 40px rgba(102, 126, 234, 0.3));
     }
 
-    @keyframes float {
-      0%, 100% { transform: translateY(0); }
-      50% { transform: translateY(-10px); }
-  }
+    .hero-main h1 {
+      text-align: left;
+      margin-bottom: 0;
+    }
+
+    @media (max-width: 900px) {
+      .hero-main {
+        flex-direction: column;
+        gap: 20px;
+      }
+      .hero-main h1 {
+        text-align: center;
+      }
+      .hero-logo {
+        width: 180px;
+      }
+    }
+
   </style>
 </head>
 <body>
@@ -401,11 +425,11 @@
     </div>
   </nav>
   
-  <section class="hero">
-    <img src="images/NovaHouse.png" alt="NovaSense" class="hero-logo">
-    <div class="hero-badge">Live ComEd Pricing Integration</div>
-    
-    <h1>Smarter Energy<br><span>for Modern Living</span></h1>
+ <section class="hero">
+    <div class="hero-main">
+      <img src="images/NovaHouse.png" alt="NovaSense" class="hero-logo">
+      <h1>Smarter Energy<br><span>for Modern Living</span></h1>
+    </div>
     
     <p>Monitor real-time electricity prices, optimize consumption, and reduce costs with our dual-hub ESP32 system. Save 10-15% on your energy bills.</p>
     
