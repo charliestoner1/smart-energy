@@ -371,13 +371,15 @@ function handleTelemetry(d, room) {
   }
 
   // Device states from telemetry for this room
-  if (d.fan !== undefined) {
-    deviceStates['fan' + room] = d.fan;
-    updateDeviceStatus('fan' + room);
-  }
-  if (d.lamp !== undefined) {
-    deviceStates['lamp' + room] = d.lamp;
-    updateDeviceStatus('lamp' + room);
+ if (currentMode === 'eco') {
+    if (d.fan !== undefined) {
+      deviceStates['fan' + room] = d.fan;
+      updateDeviceStatus('fan' + room);
+    }
+    if (d.lamp !== undefined) {
+      deviceStates['lamp' + room] = d.lamp;
+      updateDeviceStatus('lamp' + room);
+    }
   }
 
   // Cost calculation (only from room A to avoid double counting)
